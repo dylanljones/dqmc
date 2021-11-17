@@ -31,7 +31,8 @@ class LQMC:
         # Check time step size
         check_val = self.model.u * self.model.hop * self.dtau ** 2
         if check_val > 0.1:
-            logger.warning("Check-value %.2f should be smaller than 0.1!", check_val)
+            logger.warning("Increase number of time steps: Check-value %.2f should be <0.1!",
+                           check_val)
 
         self._status = ""
 
@@ -44,15 +45,25 @@ class LQMC:
         return self.config.num_timesteps
 
     def compute_expv(self, time, sigma):
-        r"""Computes the matrix exponential of the interaction matrix :math:'v_{\sigma}(l)'."""
+        r"""Computes the matrix exponential of the interaction matrix :math:'v_σ(t)'."""
         diag = sigma * self.lamb * self.config[:, time]
         return np.diagflat(np.exp(diag))
 
-    def compute_b(self, time, sigma):
-        return np.dot(self.exp_k, self.compute_expv(time, sigma))
-
     def compute_m(self, sigma):
-        # compute A=prod(B_l)
+        """Compute the matrix :math:'M_σ' used in the inversion for the Green's function.
+
+        Parameters
+        ----------
+        sigma : int
+            The spin σ of the matrix (-1 or +1).
+
+        Notes
+        -----
+        The matrix :math:'M_σ' is defined as
+        ..math::
+            M_σ = I + B_σ(1) B_σ(2) ... B_σ(N)
+            B_σ(t) = e^k e^{v_σ(t)}
+        """
         times = list(range(self.config.num_timesteps))
         # First matrix
         exp_v = self.compute_expv(times[0], sigma)
@@ -62,10 +73,11 @@ class LQMC:
             exp_v = self.compute_expv(time, sigma)
             b = np.dot(self.exp_k, exp_v)
             b_prod = np.dot(b_prod, b)
-        # Assemble M=I+prod(B)
+
         return np.eye(self.config.num_sites) + b_prod
 
-    def init_greens(self):
+    def compute_greens(self):
+        """Computes the Green's functions for both spins via matrix inversion."""
         m_up = self.compute_m(UP)
         m_dn = self.compute_m(DN)
         self.gf_up = la.inv(m_up)
@@ -74,23 +86,22 @@ class LQMC:
     def update_greens(self, site: int, time: int) -> None:
         r"""Updates the Green's function after accepting a spin-flip.
 
+        Notes
+        -----
+        The update of the Green's function after the spin at
+        site i and time t has been flipped  is defined as
+        ..math::
+            α_↑ = e^{-2 λ s(i, t)} - 1, α_↓ = e^{+2 λ s(i, t)} - 1
+            c_{j,σ} = -α_σ G_{ji,σ} + δ_{ji} α_σ
+            b_{k,σ} = G_{ki,σ} / (1 + c_{i,σ})
+            G_{jk,σ} = G_{jk,σ} - b_{j,σ}c_{k,σ}
+
         Parameters
         ----------
         site : int
             The index of the site of the flipped spin.
         time : int
             The index of the time step of the flipped spin.
-
-        Notes
-        -----
-        The update of the Green's function after the spin at
-        site i and time t has been flipped  is defined as
-        ..math::
-            alpha_↑ = e^{-2 \lambda s(i, t)} - 1
-            alpha_↓ = e^{+2 \lambda s(i, t)} - 1
-            c_{j,σ} = -\alpha_σ G_{ji,σ} + \delta_{ji} \alpha_σ
-            b_{k,σ} = G_{ki,σ} / (1 + c_{i,σ})
-            G_{jk,σ} = G_{jk,σ} - b_{j,σ}c_{k,σ}
         """
         # Compute alphas
         arg = 2 * self.lamb * self.config[site, time]
@@ -110,6 +121,7 @@ class LQMC:
         self.gf_dn += -np.dot(b_dn[:, None], c_dn[None, :])
 
     def wrap_greens(self, time):
+        """Wraps the Green's functions between two time steps."""
         expv_up = self.compute_expv(time, sigma=UP)
         expv_dn = self.compute_expv(time, sigma=DN)
         b_up = np.dot(self.exp_k, expv_up)
@@ -118,6 +130,16 @@ class LQMC:
         self.gf_dn = np.dot(np.dot(b_dn, self.gf_dn), la.inv(b_dn))
 
     def update_step(self):
+        """Performs one sweep of the configuration over all time steps and sites.
+
+        Notes
+        -----
+        A spin-flip of site i and time t is accepted, if d<r:
+        ..math::
+            α_↑ = e^{-2 λ s(i, t)} - 1, α_↓ = e^{+2 λ s(i, t)} - 1
+            d_σ = 1 + (1 - G_{ii, σ}) α_σ
+            d = d_↑ d_↓
+        """
         total = self.num_sites * self.num_timesteps
         accepted = 0
         # Iterate over all time-steps, starting at the end (.math:'\beta')
@@ -141,12 +163,38 @@ class LQMC:
         logger.debug("[%s] Acceptance ratio: %.2f", self._status, accepted / total)
 
     def warmup_loop(self, sweeps=200):
-        self.init_greens()
+        """Runs the warmup loop to (hopefully) settle the system near a equilibrium state.
+
+        Parameters
+        ----------
+        sweeps : int, optional
+            The number of full sweeps of the configuration array (hundreds).
+        """
         self._status = "warmup"
+        # Initialize Green's functions
+        self.compute_greens()
+        # Perform warmup sweeps
         for it in range(sweeps):
             self.update_step()
 
-    def measure_loop(self, func=None, sweeps=1000):
+    def measure_loop(self, func, sweeps=1000):
+        """Runs the measurement loops and performs measurements after each sweep.
+
+        Parameters
+        ----------
+        func : callable
+            A function called after every sweep to compute expectation values.
+            The parameters are the up and down Green's function. If the result has
+            the form of a sequence a 'np.ndarray' has to be returned to ensure
+            the final normalization of the results.
+        sweeps : int, optional
+            The number of full sweeps of the configuration array (thousands).
+
+        Returns
+        -------
+        res : float or np.ndarray
+            The one or more measured epectation values.
+        """
         self._status = "measurement"
         out = 0
         for it in range(sweeps):
