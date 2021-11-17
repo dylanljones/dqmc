@@ -23,7 +23,7 @@ class HubbardModel:
 
     @classmethod
     def half_filled(cls, num_sites, u=0.0, eps=0.0, hop=1.0):
-        mu = u/4 - eps
+        mu = u/2 - eps
         return cls(num_sites, u, eps, hop, mu)
 
     def hamiltonian_kinetic(self):
