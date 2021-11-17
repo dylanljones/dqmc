@@ -9,6 +9,7 @@
 # be included in all copies or substantial portions of the Software.
 
 from .logging import logger
-from .config import Configuration
+from .config import Configuration, UP, DN
 from .model import HubbardModel
 from .dqmc import Dqmc
+from .lqmc import LQMC

@@ -167,7 +167,7 @@ class Dqmc:
 
         # compute A=prod(B_l)
         b_prod = 1
-        for time in time_indices:
+        for time in range(self.num_timesteps):
             exp_v = self.get_exp_v(time, sigma)
             b = np.dot(self.exp_k, exp_v)
             b_prod = np.dot(b_prod, b)
