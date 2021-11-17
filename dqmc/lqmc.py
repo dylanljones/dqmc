@@ -7,10 +7,12 @@
 import logging
 import random
 import numpy as np
+import math
+from numpy import emath
 import scipy.linalg as la
 from .config import Configuration, UP, DN
 
-logger = logging.getLogger(__file__)
+logger = logging.getLogger("dqmc")
 
 
 class LQMC:
@@ -44,12 +46,19 @@ class LQMC:
     def compute_expv(self, time, sigma):
         r"""Computes the matrix exponential of the interaction matrix :math:'v_{\sigma}(l)'."""
         diag = sigma * self.lamb * self.config[:, time]
-        return np.diagflat(np.exp(-diag))
+        return np.diagflat(np.exp(diag))
+
+    def compute_b(self, time, sigma):
+        return np.dot(self.exp_k, self.compute_expv(time, sigma))
 
     def compute_m(self, sigma):
         # compute A=prod(B_l)
-        b_prod = 1
-        for time in range(self.config.num_timesteps):
+        times = list(range(self.config.num_timesteps))
+        # First matrix
+        exp_v = self.compute_expv(times[0], sigma)
+        b_prod = np.dot(self.exp_k, exp_v)
+        # Following matrices multiplied with dot-product
+        for time in times[1:]:
             exp_v = self.compute_expv(time, sigma)
             b = np.dot(self.exp_k, exp_v)
             b_prod = np.dot(b_prod, b)
@@ -62,36 +71,58 @@ class LQMC:
         self.gf_up = la.inv(m_up)
         self.gf_dn = la.inv(m_dn)
 
-    def update_greens(self, site, time):
+    def update_greens(self, site: int, time: int) -> None:
+        r"""Updates the Green's function after accepting a spin-flip.
+
+        Parameters
+        ----------
+        site : int
+            The index of the site of the flipped spin.
+        time : int
+            The index of the time step of the flipped spin.
+
+        Notes
+        -----
+        The update of the Green's function after the spin at
+        site i and time t has been flipped  is defined as
+        ..math::
+            alpha_↑ = e^{-2 \lambda s(i, t)} - 1
+            alpha_↓ = e^{+2 \lambda s(i, t)} - 1
+            c_{j,σ} = -\alpha_σ G_{ji,σ} + \delta_{ji} \alpha_σ
+            b_{k,σ} = G_{ki,σ} / (1 + c_{i,σ})
+            G_{jk,σ} = G_{jk,σ} - b_{j,σ}c_{k,σ}
+        """
+        # Compute alphas
         arg = 2 * self.lamb * self.config[site, time]
-        exp_p = np.exp(+arg)
-        exp_m = np.exp(-arg)
-        # Update Greens function
-        c_up = -(exp_m - 1) * self.gf_up[site, :]
-        c_dn = -(exp_p - 1) * self.gf_dn[site, :]
-        c_up[site] += (exp_m - 1)
-        c_dn[site] += (exp_p - 1)
+        alpha_up = (np.exp(-arg) - 1)
+        alpha_dn = (np.exp(+arg) - 1)
+        # Compute c-vectors for all j
+        c_up = -alpha_up * self.gf_up[site, :]
+        c_dn = -alpha_dn * self.gf_dn[site, :]
+        # Add diagonal elements where j=i
+        c_up[site] += alpha_up
+        c_dn[site] += alpha_dn
+        # Compute b-vectors for all k
         b_up = self.gf_up[:, site] / (1 + c_up[site])
         b_dn = self.gf_dn[:, site] / (1 + c_dn[site])
-        for j in range(self.num_sites):
-            for k in range(self.num_sites):
-                self.gf_up[j, k] = self.gf_up[j, k] - b_up[j] * c_up[k]
-                self.gf_dn[j, k] = self.gf_dn[j, k] - b_dn[j] * c_dn[k]
+        # Compute outer product of b and c and update GF for all j and k
+        self.gf_up += -np.dot(b_up[:, None], c_up[None, :])
+        self.gf_dn += -np.dot(b_dn[:, None], c_dn[None, :])
 
     def wrap_greens(self, time):
         expv_up = self.compute_expv(time, sigma=UP)
         expv_dn = self.compute_expv(time, sigma=DN)
-        b_up = np.dot(expv_up, self.exp_k)
-        b_dn = np.dot(expv_dn, self.exp_k)
-        self.gf_up = np.dot(np.dot(b_up, self.gf_up), np.linalg.inv(b_up))
-        self.gf_dn = np.dot(np.dot(b_dn, self.gf_dn), np.linalg.inv(b_dn))
+        b_up = np.dot(self.exp_k, expv_up)
+        b_dn = np.dot(self.exp_k, expv_dn)
+        self.gf_up = np.dot(np.dot(b_up, self.gf_up), la.inv(b_up))
+        self.gf_dn = np.dot(np.dot(b_dn, self.gf_dn), la.inv(b_dn))
 
     def update_step(self):
         total = self.num_sites * self.num_timesteps
         accepted = 0
         # Iterate over all time-steps, starting at the end (.math:'\beta')
         sites = np.arange(self.num_sites)
-        for time in range(self.num_timesteps):
+        for time in reversed(range(self.num_timesteps)):
             # Iterate over all lattice sites in a random order
             # np.random.shuffle(sites)
             for site in sites:
@@ -103,11 +134,10 @@ class LQMC:
                 if random.random() < d:
                     accepted += 1
                     # Update HS field and interaction matrices
-                    # Update Greens function
                     self.config.update(site, time)
+                    # Update Greens function
                     self.update_greens(site, time)
             self.wrap_greens(time)
-
         logger.debug("[%s] Acceptance ratio: %.2f", self._status, accepted / total)
 
     def warmup_loop(self, sweeps=200):
