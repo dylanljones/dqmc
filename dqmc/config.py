@@ -9,12 +9,14 @@
 # be included in all copies or substantial portions of the Software.
 
 import numpy as np
-from typing import Union
+from typing import Union, Tuple
 
 UP, DN = +1, -1
 
 
 class Configuration:
+
+    """Configuration class representing the Hubbard-Stratonovich (HS) field."""
 
     def __init__(self, inputarr, dtype=None):
         self._config = np.asarray(inputarr, dtype=dtype)
@@ -24,12 +26,14 @@ class Configuration:
     @classmethod
     def random(cls, num_sites: int = 0, num_timesteps: int = 1,
                dtype: Union[str, np.dtype] = np.int8):
+        """Initializes the HS-field with a random distribution of (-1, +1)."""
         num_timesteps = max(1, num_timesteps)
         array = 2 * np.random.randint(0, 2, size=(num_sites, num_timesteps)) - 1
         return cls(array, dtype)
 
     @property
-    def shape(self):
+    def shape(self) -> Tuple[int, int]:
+        """Returns the shape of the HS field."""
         return self._config.shape
 
     @property
@@ -58,11 +62,13 @@ class Configuration:
         """
         self._config[site, time] *= -1
 
-    def mean(self, axis=None, dtype=None, out=None, keepdims=False, *args, **kwargs):
-        return self._config.mean(axis, dtype, out, keepdims, *args, **kwargs)
+    def mean(self, *args, **kwargs):
+        """Computes the mean of the HS field."""
+        return self._config.mean(*args, **kwargs)
 
-    def var(self, axis=None, dtype=None, out=None, ddof=0, keepdims=False, *args, **kwargs):
-        return self._config.var(axis, dtype, out, ddof, keepdims, *args, **kwargs)
+    def var(self, *args, **kwargs):
+        """Computes the variance of the HS field."""
+        return self._config.var(*args, **kwargs)
 
     def pformat(self, delim: str = " ") -> str:
         """Returns a formated string of the configuration."""
