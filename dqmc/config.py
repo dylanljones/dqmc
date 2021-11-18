@@ -37,6 +37,11 @@ class Configuration:
         return self._config.shape
 
     @property
+    def size(self) -> int:
+        """Returns the toal number of elements in the configuration array."""
+        return self._config.shape[0] * self._config.shape[1]
+
+    @property
     def num_sites(self) -> int:
         """The number of sites used in the configuration."""
         return self._config.shape[0]

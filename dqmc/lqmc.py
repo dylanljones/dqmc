@@ -145,8 +145,8 @@ class LQMC:
         # Iterate over all time-steps, starting at the end (.math:'\beta')
         sites = np.arange(self.num_sites)
         for time in reversed(range(self.num_timesteps)):
-            # Iterate over all lattice sites in a random order
-            # np.random.shuffle(sites)
+            # Iterate over all lattice sites
+            # np.random.shuffle(sites) #  in a random order
             for site in sites:
                 # Compute acceptance ratio
                 arg = 2 * self.lamb * self.config[site, time]

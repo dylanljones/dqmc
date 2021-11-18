@@ -26,10 +26,14 @@ class HubbardModel:
         mu = u/2 - eps
         return cls(num_sites, u, eps, hop, mu)
 
-    def hamiltonian_kinetic(self):
+    def hamiltonian_kinetic(self, periodic=True):
         """Builds tridiagonal kinetic Hamiltonian for 1D Hubbard chain."""
         diag = (self.eps - self.mu) * np.ones(self.num_sites)
         offdiag = - self.hop * np.ones(self.num_sites - 1)
         arrs = [offdiag, diag, offdiag]
         offset = [-1, 0, +1]
-        return diags(arrs, offset).toarray()
+        ham = diags(arrs, offset).toarray()
+        if periodic:
+            ham[0, -1] = -self.hop
+            ham[-1, 0] = -self.hop
+        return ham
