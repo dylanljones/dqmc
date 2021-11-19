@@ -24,7 +24,7 @@ class LQMC:
         # Initialize static variables
         self.dtau = beta / self.config.num_timesteps
         self.lamb = np.arccosh(np.exp(self.model.u * self.dtau / 2.)) if model.u else 0
-        self.exp_k = la.expm(-self.dtau * model.hamiltonian_kinetic())
+        self.exp_k = la.expm(self.dtau * model.hamiltonian_kinetic())
         self.gf_up = None
         self.gf_dn = None
 
@@ -91,7 +91,7 @@ class LQMC:
         The update of the Green's function after the spin at
         site i and time t has been flipped  is defined as
         ..math::
-            α_↑ = e^{-2 λ s(i, t)} - 1, α_↓ = e^{+2 λ s(i, t)} - 1
+            α_σ = e^{-2 σ λ s(i, t)} - 1
             c_{j,σ} = -α_σ G_{ji,σ} + δ_{ji} α_σ
             b_{k,σ} = G_{ki,σ} / (1 + c_{i,σ})
             G_{jk,σ} = G_{jk,σ} - b_{j,σ}c_{k,σ}
@@ -104,9 +104,9 @@ class LQMC:
             The index of the time step of the flipped spin.
         """
         # Compute alphas
-        arg = 2 * self.lamb * self.config[site, time]
-        alpha_up = (np.exp(-arg) - 1)
-        alpha_dn = (np.exp(+arg) - 1)
+        arg = -2 * self.lamb * self.config[site, time]
+        alpha_up = (np.exp(UP * arg) - 1)
+        alpha_dn = (np.exp(DN * arg) - 1)
         # Compute c-vectors for all j
         c_up = -alpha_up * self.gf_up[site, :]
         c_dn = -alpha_dn * self.gf_dn[site, :]
@@ -126,8 +126,8 @@ class LQMC:
         expv_dn = self.compute_expv(time, sigma=DN)
         b_up = np.dot(self.exp_k, expv_up)
         b_dn = np.dot(self.exp_k, expv_dn)
-        self.gf_up = np.dot(np.dot(b_up, self.gf_up), la.inv(b_up))
-        self.gf_dn = np.dot(np.dot(b_dn, self.gf_dn), la.inv(b_dn))
+        self.gf_up = np.dot(la.inv(b_up), np.dot(self.gf_up, b_up))
+        self.gf_dn = np.dot(la.inv(b_dn), np.dot(self.gf_dn, b_dn))
 
     def update_step(self):
         """Performs one sweep of the configuration over all time steps and sites.
@@ -136,7 +136,7 @@ class LQMC:
         -----
         A spin-flip of site i and time t is accepted, if d<r:
         ..math::
-            α_↑ = e^{-2 λ s(i, t)} - 1, α_↓ = e^{+2 λ s(i, t)} - 1
+            α_σ = e^{-2 σ λ s(i, t)} - 1
             d_σ = 1 + (1 - G_{ii, σ}) α_σ
             d = d_↑ d_↓
         """
@@ -144,21 +144,23 @@ class LQMC:
         accepted = 0
         # Iterate over all time-steps, starting at the end (.math:'\beta')
         sites = np.arange(self.num_sites)
-        for time in reversed(range(self.num_timesteps)):
+        for time in range(self.num_timesteps):
             # Iterate over all lattice sites
             # np.random.shuffle(sites) #  in a random order
             for site in sites:
                 # Compute acceptance ratio
-                arg = 2 * self.lamb * self.config[site, time]
-                d_up = 1 + (1 - self.gf_up[site, site]) * (np.exp(-arg) - 1)
-                d_dn = 1 + (1 - self.gf_dn[site, site]) * (np.exp(+arg) - 1)
+                arg = -2 * self.lamb * self.config[site, time]
+                alpha_up = (np.exp(UP * arg) - 1)
+                alpha_dn = (np.exp(DN * arg) - 1)
+                d_up = 1 + alpha_up * (1 - self.gf_up[site, site])
+                d_dn = 1 + alpha_dn * (1 - self.gf_dn[site, site])
                 d = d_up * d_dn
                 if random.random() < d:
                     accepted += 1
                     # Update HS field and interaction matrices
-                    self.config.update(site, time)
                     # Update Greens function
                     self.update_greens(site, time)
+                    self.config.update(site, time)
             self.wrap_greens(time)
         logger.debug("[%s] Acceptance ratio: %.2f", self._status, accepted / total)
 
