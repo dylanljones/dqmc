@@ -8,382 +8,443 @@
 # LICENSE file in the root directory and this permission notice shall
 # be included in all copies or substantial portions of the Software.
 
+"""Implementations of determinant QMC (DQMC) following ref [1]_
+
+Notes
+-----
+The time slice index is called `t` instead of the `l` of the reference.
+
+References
+----------
+.. [1] Z. Bai et al., “Numerical Methods for Quantum Monte Carlo Simulations
+       of the Hubbard Model”, in Series in Contemporary Applied Mathematics,
+       Vol. 12 (June 2009), p. 1.
+"""
+
+import random
 import logging
-import time as _time
 import numpy as np
 import scipy.linalg as la
-from .config import Configuration
-
+from .model import HubbardModel
+from .config import Configuration, UP, DN
 
 logger = logging.getLogger(__file__)
 
 
-class Dqmc:
+def init_qmc(config, model, beta):
+    r"""Initializes static variables of the QMC algorithm.
 
-    def __init__(self, model, beta, num_times, warmup=300, sweeps=2000, det_mode=False):
-        """ Initialize the Lattice Quantum Monte-Carlo solver.
+    Parameters
+    ----------
+    config : Configuration
+        The configuration or Hubbard-Stratonovich field.
+    model : HubbardModel
+        The model instance.
+    beta : float
+        The inverse temperature :math:'β=1/T'.
 
-        Parameters
-        ----------
-        model : HubbardModel
-            The model instance.
-        num_times: int
-            Number of time steps from .math'0' to .math'\beta'.
-        warmup int, optional
-            Number of warmup sweeps.
-        sweeps: int, optional
-            Number of measurement sweeps.
-        det_mode: bool, optional
-            Flag for the calculation mode. If 'True' the slow algorithm via
-            the determinants is used. The default is 'False' (faster).
+    Returns
+    -------
+    nu : float
+        The parameter ν defined by :math:'\cosh(ν) = e^{U Δτ / 2}'.
+    exp_k : np.ndarray
+        The matrix exponential of the kinetic Hamiltonian of the model.
+    """
+    # Compute and check time step size
+    dtau = beta / config.num_timesteps
+    check = model.u * model.hop * dtau ** 2
+    if check > 0.1:
+        logger.warning("Increase number of time steps: Check-value %.2f should be <0.1!", check)
 
-        """
-        self.model = model
-        self.config = Configuration.random(model.num_sites, num_times)
-        self.warm_sweeps = warmup
-        self.meas_sweeps = sweeps
+    # Compute factor and matrix exponential of kinetic hamiltonian
+    nu = np.arccosh(np.exp(model.u * dtau / 2.)) if model.u else 0
+    exp_k = la.expm(dtau * model.hamiltonian_kinetic())
 
-        # Iteration and mode attributes
-        self.det_mode = det_mode
-        self.status = ""
-        self.it = 0
-        self.ratio = 0.0
-        self.acc = False
+    return nu, exp_k
 
-        # Cached and temperature-dependend attributes
-        self.ham_kin = self.model.hamiltonian_kinetic()
-        self.beta = 0.
-        self.dtau = 0.
-        self.lamb = 0.
-        self.exp_k = None
-        logger.debug("u=          %s", self.model.u)
-        logger.debug("eps=        %s", self.model.eps)
-        logger.debug("t=          %s", self.model.hop)
-        logger.debug("mu=         %s", self.model.mu)
-        logger.debug("num_sites=  %s", self.config.num_sites)
-        logger.debug("num_times=  %s", self.config.num_timesteps)
-        logger.debug("det_mode=   %s", self.det_mode)
-        logger.debug("Warmup=     %s", self.warm_sweeps)
-        logger.debug("Measurement=%s", self.meas_sweeps)
-        logger.debug("END INIT")
 
-        self.set_beta(beta)
+def bmatrix(exp_k, nu, config, t, sigma):
+    r"""Computes the matrix :math:'B_σ(h_t)'.
 
-    @property
-    def num_sites(self):
-        return self.config.num_sites
+    Notes
+    -----
+    The matrix :math:'B_σ(h_t)' is defined as
+    ..math::
+        B_σ(h_t) = e^k e^{σ ν V_t(h_t)}
 
-    @property
-    def num_timesteps(self):
-        return self.config.num_timesteps
+    Parameters
+    ----------
+    exp_k : np.ndarray
+        The matrix exponential of the kinetic hamiltonian.
+    nu : float
+        The parameter ν defined by :math:'\cosh(ν) = e^{U Δτ / 2}'
+    config : Configuration
+        The configuration or Hubbard-Stratonovich field.
+    t : int
+        The index of the time step.
+    sigma : int
+        The spin σ (-1 or +1).
 
-    def set_beta(self, beta: float) -> None:
-        """Sets the inverse temperature .math:'\beta' and initializes the calculation.
+    Returns
+    -------
+    b : np.ndarray
+        The matrix :math:'B_{t, σ}(h_t)'.
+    """
+    diag = np.exp(sigma * nu * config[:, t])
+    return exp_k @ np.diag(diag)
 
-        Parameters
-        ----------
-        beta : float
-            The inverse of the temperature.
-        """
-        logger.debug("SETUP")
-        self.dtau = beta / self.config.num_timesteps
-        self.beta = beta
 
-        self.lamb = np.arccosh(np.exp(self.model.u * self.dtau / 2.)) if self.model.u else 0
-        self.exp_k = la.expm(-1 * self.dtau * self.ham_kin)
+def mmatrix(exp_k, nu, config, sigma, t0=0):
+    r"""Computes the fermion matrix :math:'M_σ(h)'.
 
-        logger.debug(f"beta=       %s", self.beta)
-        logger.debug(f"dtau=       %s", self.dtau)
-        logger.debug(f"lambda=     %s", self.lamb)
-        check_val = self.model.u * self.model.hop * self.dtau**2
-        if check_val < 0.1:
-            logger.info("Check-value %.2f is smaller than 0.1!", check_val)
-        else:
-            logger.warning("Check-value %.2f should be smaller than 0.1!", check_val)
-        logger.debug("END SETUP")
+    Notes
+    -----
+    The matrix :math:'M_σ' is defined as
+    ..math::
+        M_σ = I + B_σ(L) B_σ(L-1) ... B_σ(1)
+        B_σ(h_t) = e^k e^{σ ν V_t(h_t)}
 
-    def set_temperature(self, temp):
-        """Sets the temperature and initializes the calculation.
+    Parameters
+    ----------
+    exp_k : np.ndarray
+        The matrix exponential of the kinetic hamiltonian.
+    nu : float
+        The parameter ν defined by :math:'\cosh(ν) = e^{U Δτ / 2}'
+    config : Configuration
+        The configuration or Hubbard-Stratonovich field.
+    sigma : int
+        The spin σ (-1 or +1).
+    t0 : int
+        The current time step index.
 
-        This is an alternative method to `set_beta`.
+    Returns
+    -------
+    m : np.ndarray
+        The fermion matrix :math:'M_{σ}(h)'.
+    """
+    # Initialize the time indices of the B-matrices
+    # Starts with the last time step
+    times = range(config.num_timesteps)
+    times = list(reversed(times))
+    if t0:
+        times = times[-t0:] + times[:-t0]
 
-        Parameters
-        ----------
-        temp : float
-            The temperature.
-        """
-        self.set_beta(1 / temp)
-    # ===========================================================================================
+    # First matrix
+    b_prod = bmatrix(exp_k, nu, config, times[0], sigma)
+    # Following matrices multiplied with dot-product
+    for t in times[1:]:
+        b = bmatrix(exp_k, nu, config, t, sigma)
+        b_prod = np.dot(b_prod, b)
+    # Add identity matrix
+    return np.eye(config.num_sites) + b_prod
 
-    def get_exp_v(self, time, sigma):
-        r"""Computes the Matrix exponential of .math:'V_\sigma(l)'
 
-        Notes
-        -----
-        Since .math:'V_\sigma(l) = diag(h_{l, 1}, \dots, h_{l, N}' is a diagonal matrix,
-        the numerical matrix exponential is not needed. The exponential of the diagonal elements
-        can be computed directly.
+def sample_acceptance(d):
+    """Helper function for accepting a proposed update via the Metropolis acceptance ratio.
 
-        Parameters
-        ----------
-        time : int
-            The time step index.
-        sigma : int
-            The spin value.
+    Parameters
+    ----------
+    d : float
+        The Metropolis acceptance ratio.
 
-        Returns
-        -------
-        exp_v : (N, N) np.ndarray
-            The matrix exponential of .math:'V_\sigma(l)'.
-        """
-        diag = -1 * sigma * self.lamb * self.config[:, time]
-        return np.diagflat(np.exp(diag))
+    Returns
+    -------
+    accepted : bool
+        Flag if the proposed update is accepted or not.
+    """
+    return random.random() < d
 
-    def get_m(self, time_0, sigma):
-        r"""Computes the 'M' matrices for spin .math:'\sigma'.
 
-        Notes
-        -----
-        In the warmup loop of the determinant-mode the cyclic permutation is not needed.
-        The timeslice 'l0' can be left at 0 to skip the first loop in the computation
-        of the matrix-product.
+def compute_det(exp_k, nu, config, t0=0):
+    r"""Computes the product of the spin-up and -down determinants used for the acceptance ratio.
 
-        Parameters
-        ----------
-        time_0 : int
-            Time-slice index used for cyclic permutation.
-        sigma : int
-            Spin value.
+    Notes
+    -----
+    The product of determinants is defined as
+    ..math::
+        det[M_↑(h)] det[M_↓(h)]
 
-        Returns
-        -------
-        m: (N, N) np.ndarray
-        """
-        # Initialize time slices in cyclic permutation:
-        # l0, l0-1, ..., 0, L-1, L-2, ..., l0+1
-        time_0 = time_0 % self.num_timesteps
-        indices = list(reversed(range(self.num_timesteps)))
-        time_indices = indices[-time_0:] + indices[:-time_0]
+    Parameters
+    ----------
+    exp_k : np.ndarray
+        The matrix exponential of the kinetic hamiltonian.
+    nu : float
+        The parameter ν defined by :math:'\cosh(ν) = e^{U Δτ / 2}'
+    config : Configuration
+        The configuration or Hubbard-Stratonovich field.
 
-        # compute A=prod(B_l)
-        b_prod = 1
-        for time in range(self.num_timesteps):
-            exp_v = self.get_exp_v(time, sigma)
-            b = np.dot(self.exp_k, exp_v)
-            b_prod = np.dot(b_prod, b)
+    Returns
+    -------
+    det_prod : float
+        The product of the spin-up and -down determinants.
+    """
+    m_up = mmatrix(exp_k, nu, config, sigma=UP, t0=t0)
+    m_dn = mmatrix(exp_k, nu, config, sigma=DN, t0=t0)
+    return float(la.det(m_up) * la.det(m_dn))
 
-        # Assemble M=I+prod(B)
-        return np.eye(self.num_sites) + b_prod
 
-    def iter_sweeps(self, n, console_updates=200):
-        """Iterates over the specified number of sweeps.
+def compute_acceptance_det(old_det, new_det):
+    r"""Computes the Metropolis acceptance via the determinants.
 
-        The generator is mainly used for logging and updating the console.
+    Notes
+    -----
+    The acceptance is defined as the fraction
+    ..math::
+        d = det[M_↑(h')] det[M_↓(h')] / (det[M_↑(h)] det[M_↓(h)])
 
-        Parameters
-        ----------
-        n : int
-            Number of sweeps.
-        console_updates : int, optional
-            Number of times the console output is updated during all sweeps. The default is '200'.
+    where :math:' h' ' is the new configuration and :math:' h ' the old one.
 
-        Yields
-        ------
-        it: int
-            Current iteration index.
-        """
-        logger.debug(self.status.upper())
-        print_interval = max(1, int(n/console_updates))
-        for it in range(n):
-            count = it + 1
-            if it < n and count % print_interval == 0:
-                string = f"{self.status} Sweep {it + 1} ({100 * count / n:.1f}%)"
-                string += f" [Mean: {self.config.mean():5.2f}, Var: {self.config.var():5.2f}]"
-                print("\r" + string, end="", flush=True)
-            self.it = it
-            yield it
-        print(f"\r{self.status} Sweep {n} (100.0%)")
-        logger.debug("END " + self.status.upper())
+    Parameters
+    ----------
+    old_det : float
+        The previous determinant product.
+    new_det : float
+        The new determinant product.
 
-    def _log_iter(self, site, time):
-        """ Logs the attributes of the iteration.
+    Returns
+    -------
+    d : float
+        The Metropolis acceptance ratio.
+    """
+    return new_det / old_det
 
-        The format of logs is:
-        <Status> <iteration> -- <time_slice> <site> -- <ratio> (<accepted>) -- <mc mean> <mc var>
 
-        Parameters
-        ----------
-        site : int
-            Site index.
-        time : int
-            Time-slice index.
-        """
-        log = f"{self.status} {self.it + 1} -- {time:>2} {site:>2} -- {self.ratio:.1f} ({self.acc})"
-        log += f" -- {self.config.mean():.3f} {self.config.var():.3f}"
-        logger.debug(log)
+def compute_acceptance_fast(nu, config, i, t, gf_up, gf_dn):
+    r"""Computes the Metropolis acceptance via the fast update scheme.
 
-    # =========================================================================
+    Notes
+    -----
+    A spin-flip of site i and time t is accepted, if d<r:
+    ..math::
+        α_σ = e^{-2 σ ν s(i, t)} - 1
+        d_σ = 1 + (1 - G_{ii, σ}) α_σ
+        d = d_↑ d_↓
 
-    def _update_step_det(self, old_det):
-        # Iterate over all time-steps, starting at the end (.math:'\beta')
-        for time in reversed(range(self.num_timesteps)):
+    Parameters
+    ----------
+    nu : float
+        The parameter ν defined by :math:'\cosh(ν) = e^{U Δτ / 2}'
+    config : Configuration
+        The configuration or Hubbard-Stratonovich field.
+    i : int
+        The site index :math:'i' of the proposed spin-flip.
+    t : int
+        The time-step index :math:'t' of the proposed spin-flip.
+    gf_up : np.ndarray
+        The spin-up Green's function.
+    gf_dn : np.ndarray
+        The spin-down Green's function.
+
+    Returns
+    -------
+    d : float
+        The Metropolis acceptance ratio.
+    """
+    arg = -2 * nu * config[i, t]
+    alpha_up = (np.exp(UP * arg) - 1)
+    alpha_dn = (np.exp(DN * arg) - 1)
+    d_up = 1 + alpha_up * (1 - gf_up[i, i])
+    d_dn = 1 + alpha_dn * (1 - gf_dn[i, i])
+    return d_up * d_dn
+
+
+def compute_greens(exp_k, nu, config):
+    r"""Computes the spin-up and -down Green's function for the configuration.
+
+    Parameters
+    ----------
+    exp_k : np.ndarray
+        The matrix exponential of the kinetic hamiltonian.
+    nu : float
+        The parameter ν defined by :math:'\cosh(ν) = e^{U Δτ / 2}'
+    config : Configuration
+        The configuration or Hubbard-Stratonovich field.
+
+    Returns
+    -------
+    gf_up : np.ndarray
+        The spin-up Green's function.
+    gf_dn : np.ndarray
+        The spin-down Green's function.
+    """
+    m_up = mmatrix(exp_k, nu, config, sigma=UP)
+    m_dn = mmatrix(exp_k, nu, config, sigma=DN)
+    gf_up = la.inv(m_up)
+    gf_dn = la.inv(m_dn)
+    return gf_up, gf_dn
+
+
+def update_greens(nu, config, i, t, gf_up, gf_dn):
+    r"""Updates the Green's function after accepting a spin-flip.
+
+    Notes
+    -----
+    The update of the Green's function after the spin at
+    site i and time t has been flipped  is defined as
+    ..math::
+        α_σ = e^{-2 σ ν s(i, t)} - 1
+        c_{j,σ} = -α_σ G_{ji,σ} + δ_{ji} α_σ
+        b_{k,σ} = G_{ki,σ} / (1 + c_{i,σ})
+        G_{jk,σ} = G_{jk,σ} - b_{j,σ}c_{k,σ}
+
+    Parameters
+    ----------
+    nu : float
+        The parameter ν defined by :math:'\cosh(ν) = e^{U Δτ / 2}'
+    config : Configuration
+        The configuration or Hubbard-Stratonovich field.
+    i : int
+        The site index :math:'i' of the proposed spin-flip.
+    t : int
+        The time-step index :math:'t' of the proposed spin-flip.
+    gf_up : np.ndarray
+        The spin-up Green's function.
+    gf_dn : np.ndarray
+        The spin-down Green's function.
+
+    Returns
+    -------
+    gf_up : np.ndarray
+        The updated spin-up Green's function.
+    gf_dn : np.ndarray
+        The updated spin-down Green's function.
+    """
+    # Compute alphas
+    arg = -2 * nu * config[i, t]
+    alpha_up = (np.exp(UP * arg) - 1)
+    alpha_dn = (np.exp(DN * arg) - 1)
+    # Compute c-vectors for all j
+    c_up = -alpha_up * gf_up[i, :]
+    c_dn = -alpha_dn * gf_dn[i, :]
+    # Add diagonal elements where j=i
+    c_up[i] += alpha_up
+    c_dn[i] += alpha_dn
+    # Compute b-vectors for all k
+    b_up = gf_up[:, i] / (1 + c_up[i])
+    b_dn = gf_dn[:, i] / (1 + c_dn[i])
+    # Compute outer product of b and c and update GF for all j and k
+    gf_up += -np.dot(b_up[:, None], c_up[None, :])
+    gf_dn += -np.dot(b_dn[:, None], c_dn[None, :])
+    return gf_up, gf_dn
+
+
+def wrap_greens(exp_k, nu, config, t, gf_up, gf_dn):
+    r"""Wraps the Green's functions between the time step :math:'t' and :math:'t+1'.
+
+    Parameters
+    ----------
+    exp_k : np.ndarray
+        The matrix exponential of the kinetic hamiltonian.
+    nu : float
+        The parameter ν defined by :math:'\cosh(ν) = e^{U Δτ / 2}'
+    config : Configuration
+        The configuration or Hubbard-Stratonovich field.
+    t : int
+        The time-step index :math:'t' of the last iteration over all sites.
+    gf_up : np.ndarray
+        The spin-up Green's function.
+    gf_dn : np.ndarray
+        The spin-down Green's function.
+
+    Returns
+    -------
+    gf_up : np.ndarray
+        The wrapped spin-up Green's function.
+    gf_dn : np.ndarray
+        The wrapped spin-down Green's function.
+    """
+    b_up = bmatrix(exp_k, nu, config, t, sigma=UP)
+    b_dn = bmatrix(exp_k, nu, config, t, sigma=UP)
+    gf_up = np.dot(la.inv(b_up), np.dot(gf_up, b_up))
+    gf_dn = np.dot(la.inv(b_dn), np.dot(gf_dn, b_dn))
+    return gf_up, gf_dn
+
+
+# =========================================================================
+
+
+def warmup_loop_det(exp_k, nu, config, sweeps=200):
+    r"""Runs the determinant warmup loop to (hopefully) settle the system near the equilibrium.
+
+    Parameters
+    ----------
+    exp_k : np.ndarray
+        The matrix exponential of the kinetic hamiltonian.
+    nu : float
+        The parameter ν defined by :math:'\cosh(ν) = e^{U Δτ / 2}'
+    config : Configuration
+        The configuration or Hubbard-Stratonovich field.
+    sweeps : int, optional
+        The number of full sweeps of the configuration array (hundreds).
+
+    Returns
+    -------
+    old_det : float
+        The product of determinants of the coonfiguration after the last accepted spin flip.
+    """
+    # Initialize the determinant product
+    old_det = compute_det(exp_k, nu, config)
+    # Warmup-sweeps
+    for _ in range(sweeps):
+        # Iterate over all time-steps
+        for t in reversed(range(config.num_timesteps)):
             # Iterate over all lattice sites
-            for site in range(self.num_sites):
-                # Update Configuration by flipping spin
-                self.config.update(site, time)
-                # Compute updated M matrices after config-update
-                m_up = self.get_m(time, sigma=+1)
-                m_dn = self.get_m(time, sigma=-1)
-                # Compute the new determinant for both matrices for the acceptance ratio
-                new_det = np.linalg.det(m_up) * np.linalg.det(m_dn)
-                self.ratio = new_det / old_det
-                self.acc = np.random.rand() <= self.ratio
-                if self.acc:
-                    # Move accepted:
-                    # Continue using the new configuration
+            for i in range(config.num_sites):
+                # Propose update by flipping spin in confguration
+                config.update(i, t)
+                # Compute determinant product of the new configuration
+                new_det = compute_det(exp_k, nu, config)
+                # Compute acceptance ratio
+                d = compute_acceptance_det(old_det, new_det)
+                # Check if move is accepted
+                if sample_acceptance(d):
+                    # Move accepted: Continue using the new configuration
                     old_det = new_det
                 else:
-                    # Move not accepted:
-                    # Revert to the old configuration by updating again
-                    self.config.update(site, time)
-                self._log_iter(site, time)
-        return old_det
+                    # Move not accepted: Revert to the old configuration by updating again
+                    config.update(i, t)
+    return old_det
 
-    def warmup_loop_det(self):
-        """ Runs the slow version of the LQMC warmup-loop """
-        self.status = "Warmup"
-        # Calculate M matrices for both spins
-        m_up = self.get_m(0, sigma=+1)
-        m_dn = self.get_m(0, sigma=-1)
-        # Initialize the determinant for both matrices
-        old_det = np.linalg.det(m_up) * np.linalg.det(m_dn)
-        # Warmup-sweeps
-        for _ in self.iter_sweeps(self.warm_sweeps):
-            old_det = self._update_step_det(old_det)
 
-    def measure_loop_det(self):
-        r""" Runs the slow version of the LQMC measurement-loop and returns the Green's function.
+def warmup_loop_fast(exp_k, nu, config, sweeps=200):
+    r"""Runs the rank-1 warmup loop to (hopefully) settle the system near the equilibrium.
 
-        Returns
-        -------
-        gf : (2, N, N) np.ndarray
-            Measured Green's function .math:'G' of the up- and down-spin channel.
-        """
-        self.status = "Measurement"
-        # Calculate M matrices for both spins
-        m_up = self.get_m(0, sigma=+1)
-        m_dn = self.get_m(0, sigma=-1)
-        # Initialize the determinant for both matrices
-        old_det = np.linalg.det(m_up) * np.linalg.det(m_dn)
-        # Initialize greens functions
-        shape = (self.num_sites, self.num_sites)
-        gf_total_up = np.zeros(shape, dtype=np.float64)
-        gf_total_dn = np.zeros(shape, dtype=np.float64)
-        # Measurement-sweeps
-        for _ in self.iter_sweeps(self.meas_sweeps):
-            old_det = self._update_step_det(old_det)
-            # Perform measurements
-            m_up = self.get_m(0, sigma=+1)
-            m_dn = self.get_m(0, sigma=-1)
-            gf_total_up += np.linalg.inv(m_up)
-            gf_total_dn += np.linalg.inv(m_dn)
-        # Return the normalized total green functions
-        return np.asarray([gf_total_up, gf_total_dn]) / self.meas_sweeps
+    Parameters
+    ----------
+    exp_k : np.ndarray
+        The matrix exponential of the kinetic hamiltonian.
+    nu : float
+        The parameter ν defined by :math:'\cosh(ν) = e^{U Δτ / 2}'
+    config : Configuration
+        The configuration or Hubbard-Stratonovich field.
+    sweeps : int, optional
+        The number of full sweeps of the configuration array (hundreds).
 
-    # =========================================================================
-
-    def _update_step(self):
-        # Compute M matrices
-        m_up = self.get_m(0, sigma=+1)
-        m_dn = self.get_m(0, sigma=-1)
-        # Initialize greens functions
-        gf_up = np.linalg.inv(m_up)
-        gf_dn = np.linalg.inv(m_dn)
-        # Iterate over all time-steps, starting at the end (.math:'\beta')
-        for time in reversed(range(self.num_timesteps)):
+    Returns
+    -------
+    gf_up : np.ndarray
+        The spin-up Green's function after the warmup loop.
+    gf_dn : np.ndarray
+        The spin-down Green's function after the warmup loop.
+    """
+    # Initialize Green's functions
+    m_up = mmatrix(exp_k, nu, config, sigma=UP)
+    m_dn = mmatrix(exp_k, nu, config, sigma=DN)
+    gf_up = la.inv(m_up)
+    gf_dn = la.inv(m_dn)
+    # Warmup-sweeps
+    for _ in range(sweeps):
+        # Iterate over all time-steps
+        for t in reversed(range(config.num_timesteps)):
             # Iterate over all lattice sites
-            for i in range(self.num_sites):
+            for i in range(config.num_sites):
                 # Compute acceptance ratio
-                arg = 2 * self.lamb * self.config[i, time]
-                d_up = 1 + (1 - gf_up[i, i]) * (np.exp(+arg) - 1)
-                d_dn = 1 + (1 - gf_dn[i, i]) * (np.exp(-arg) - 1)
-                self.ratio = d_up * d_dn
-                self.acc = np.random.rand() <= self.ratio
-                if self.acc:
-                    # Update Greens function
-                    c_up = -(np.exp(-arg) - 1) * gf_up[i, :]
-                    c_up[i] += (np.exp(-arg) - 1)
-                    c_dn = -(np.exp(+arg) - 1) * gf_dn[i, :]
-                    c_dn[i] += (np.exp(+arg) - 1)
-                    # These are the bs in the tutorial, but I call them e
-                    # here to avoid confusing them with the B-matrices
-                    e_up = gf_up[:, i] / (1 + c_up[i])
-                    e_dn = gf_dn[:, i] / (1 + c_dn[i])
-                    for j in range(self.num_sites):
-                        for k in range(self.num_sites):
-                            gf_up[j, k] = gf_up[j, k] - e_up[j] * c_up[k]
-                            gf_dn[j, k] = gf_dn[j, k] - e_dn[j] * c_dn[k]
-                    # Update HS-field
-                    self.config.update(i, time)
-
-                self._log_iter(i, time)
-
-            # Update the GF for the next time slice (Wrapping)
-            if time > 0:  # Only do this, if this is not the last l-loop
-                exp_v_up = self.get_exp_v(time - 1, sigma=+1)
-                exp_v_dn = self.get_exp_v(time - 1, sigma=-1)
-                b_up = np.dot(exp_v_up, self.exp_k)
-                b_dn = np.dot(exp_v_dn, self.exp_k)
-
-                gf_up = np.dot(np.dot(b_up, gf_up), np.linalg.inv(b_up))
-                gf_dn = np.dot(np.dot(b_dn, gf_dn), np.linalg.inv(b_dn))
-
-        return gf_up, gf_dn
-
-    def warmup_loop(self):
-        """ Runs the fast version of the LQMC warmup-loop """
-        self.status = "Warmup"
-        # Warmup-sweeps
-        for _ in self.iter_sweeps(self.warm_sweeps):
-            self._update_step()
-
-    def measure_loop(self):
-        r""" Runs the fast version of the LQMC measurement-loop and returns the Green's function.
-        gf: (2, N, N) np.ndarray
-            Measured Green's function .math'G' of the up- and down-spin channel.
-        """
-        self.status = "Measurement"
-        # Initialize greens functions
-        shape = (self.num_sites, self.num_sites)
-        gf_total_up = np.zeros(shape, dtype=np.float64)
-        gf_total_dn = np.zeros(shape, dtype=np.float64)
-        # Measurement-sweeps
-        for _ in self.iter_sweeps(self.meas_sweeps):
-            # Initialize greens functions
-            gf_up, gf_dn = self._update_step()
-            # Perform measurements
-            gf_total_up += gf_up
-            gf_total_dn += gf_dn
-        # Return the normalized total green functions
-        return np.asarray([gf_total_up, gf_total_dn]) / self.meas_sweeps
-
-    # =========================================================================
-
-    def run_lqmc(self):
-        """Runs the warmup and measurment loop and returns the Green's function.
-
-        Returns
-        -------
-        gf : (2, N, N) np.ndarray
-            Measured Green's function .math'G' of the up- and down-spin channel.
-        """
-        t0 = _time.time()
-        if self.det_mode:
-            self.warmup_loop_det()
-            gf = self.measure_loop_det()
-        else:
-            self.warmup_loop()
-            gf = self.measure_loop()
-        mins, secs = divmod(_time.time() - t0, 60)
-        logger.info(f"Total time: {int(mins):0>2}:{int(secs):0>2} min")
-        return gf
+                d = compute_acceptance_fast(nu, config, i, t, gf_up, gf_dn)
+                # Check if move is accepted
+                if sample_acceptance(d):
+                    # Move accepted: update configuration and Green's functions
+                    gf_up, gf_dn = update_greens(nu, config, i, t, gf_up, gf_dn)
+                    config.update(i, t)
+            # Wrap Green#s function between time steps
+            gf_up, gf_dn = wrap_greens(exp_k, nu, config, t, gf_up, gf_dn)
+    return gf_up, gf_dn

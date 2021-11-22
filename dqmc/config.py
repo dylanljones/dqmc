@@ -84,6 +84,10 @@ class Configuration:
             rows.append(f"{site:<3} [{row}]")
         return header + "\n" + "\n".join(rows)
 
+    def copy(self):
+        """Creates a deep copy of the configuration array."""
+        return Configuration(self._config.copy())
+
     def __getitem__(self, item):
         return self._config[item]
 
