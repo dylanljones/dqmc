@@ -9,90 +9,84 @@
 # be included in all copies or substantial portions of the Software.
 
 import numpy as np
-from typing import Union, Tuple
+import matplotlib.pyplot as plt
+from numba import jit
 
 UP, DN = +1, -1
 
 
-class Configuration:
+def init_configuration(num_sites: int, num_timesteps: int) -> np.ndarray:
+    """Initializes the configuration array with a random distribution of `-1` and `+1`.
 
-    """Configuration class representing the Hubbard-Stratonovich (HS) field."""
+    Parameters
+    ----------
+    num_sites : int
+        The number of sites `N` of the lattice model.
+    num_timesteps : int
+        The number of time steps `L` used in the Monte Carlo simulation.
 
-    def __init__(self, inputarr, dtype=None):
-        self._config = np.asarray(inputarr, dtype=dtype)
-        if len(self.shape) != 2:
-            raise ValueError(f"Inputarray must be 2 dimensional, not {len(self.shape)}D!")
+    Returns
+    -------
+    config : (N, L) np.ndarray
+        The array representing the configuration or or Hubbard-Stratonovich field.
+    """
+    return 2 * np.random.randint(0, 2, size=(num_sites, num_timesteps), dtype=np.int8) - 1
 
-    @classmethod
-    def random(cls, num_sites: int = 0, num_timesteps: int = 1,
-               dtype: Union[str, np.dtype] = np.int8):
-        """Initializes the HS-field with a random distribution of (-1, +1)."""
-        num_timesteps = max(1, num_timesteps)
-        array = 2 * np.random.randint(0, 2, size=(num_sites, num_timesteps)) - 1
-        return cls(array, dtype)
 
-    @property
-    def shape(self) -> Tuple[int, int]:
-        """Returns the shape of the HS field."""
-        return self._config.shape
+@jit(nopython=True)
+def update_configuration(config: np.ndarray, i: int, t: int) -> None:
+    """Updates an element of the HS-field by flipping it's spin-value.
 
-    @property
-    def size(self) -> int:
-        """Returns the toal number of elements in the configuration array."""
-        return self._config.shape[0] * self._config.shape[1]
+    Parameters
+    ----------
+    config : (N, L) np.ndarray
+        The configuration or Hubbard-Stratonovich field.
+    i : int
+        The index of the lattice site to update.
+    t : int, optional
+        The index of the time slice to update.
+    """
+    config[i, t] = -config[i, t]
 
-    @property
-    def num_sites(self) -> int:
-        """The number of sites used in the configuration."""
-        return self._config.shape[0]
 
-    @property
-    def num_timesteps(self) -> int:
-        """The number of time steps used in the configuration."""
-        return self._config.shape[1]
+class ConfigurationPlot:
 
-    def shuffle(self) -> None:
-        """Fills the configuration with a random distribution of (-1, +1)."""
-        self._config[:] = 2 * np.random.randint(0, 2, size=self.shape) - 1
+    def __init__(self, config, ax=None):
+        if ax is None:
+            fig, ax = plt.subplots()
+            ax.invert_yaxis()
+        else:
+            fig = ax.get_figure()
+        self.fig = fig
+        self.ax = ax
+        self.im = None
 
-    def update(self, site: int, time: int = 0) -> None:
-        """Updates an element of the HS-field by flipping its spin-value.
+        self.plot_config(config)
 
-        Parameters
-        ----------
-        site : int
-            The index of the site.
-        time : int, optional
-            The index of the time slice. The default is `0`.
-        """
-        self._config[site, time] *= -1
+    def set_figsize(self, width, height, dpi=None):
+        self.fig.set_size_inches(width, height)
+        if dpi is not None:
+            self.fig.set_dpi(dpi)
 
-    def mean(self, *args, **kwargs):
-        """Computes the mean of the HS field."""
-        return self._config.mean(*args, **kwargs)
+    def tight_layout(self):
+        self.fig.tight_layout()
 
-    def var(self, *args, **kwargs):
-        """Computes the variance of the HS field."""
-        return self._config.var(*args, **kwargs)
+    def plot_config(self, config):
+        self.im = self.ax.imshow(config)
 
-    def pformat(self, delim: str = " ") -> str:
-        """Returns a formated string of the configuration."""
-        header = r"i\l  " + delim.join([f"{i:^3}" for i in range(self.num_timesteps)])
-        rows = list()
-        for site in range(self.num_sites):
-            row = delim.join([f"{x:^3}" for x in self._config[site, :]])
-            rows.append(f"{site:<3} [{row}]")
-        return header + "\n" + "\n".join(rows)
+    def update_config(self, config):
+        self.im.set_data(config)
 
-    def copy(self):
-        """Creates a deep copy of the configuration array."""
-        return Configuration(self._config.copy())
+    def show(self, tight=True, block=True):
+        if tight:
+            self.tight_layout()
+        plt.show(block=block)
 
-    def __getitem__(self, item):
-        return self._config[item]
+    @staticmethod
+    def pause(interval=0.):
+        plt.pause(interval)
 
-    def __repr__(self) -> str:
-        return f"{self.__class__.__name__}(shape: {self.shape}, dtype={self._config.dtype})"
-
-    def __str__(self) -> str:
-        return self.pformat()
+    def draw(self, pause=1e-10):
+        self.fig.canvas.flush_events()
+        plt.show(block=False)
+        plt.pause(pause)

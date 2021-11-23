@@ -25,44 +25,49 @@ import random
 import logging
 import numpy as np
 import scipy.linalg as la
+from numba import jit
 from .model import HubbardModel
-from .config import Configuration, UP, DN
+from .config import init_configuration, update_configuration, UP, DN
 
-logger = logging.getLogger(__file__)
+logger = logging.getLogger("dqmc")
 
 
-def init_qmc(config, model, beta):
-    r"""Initializes static variables of the QMC algorithm.
+def init_qmc(model, num_timesteps):
+    r"""Initializes configuration and static variables of the QMC algorithm.
 
     Parameters
     ----------
-    config : Configuration
-        The configuration or Hubbard-Stratonovich field.
     model : HubbardModel
         The model instance.
-    beta : float
-        The inverse temperature :math:'β=1/T'.
+    num_timesteps : int
+        The number of time steps `L` used in the Monte Carlo simulation.
 
     Returns
     -------
+    config : (N, L) np.ndarray
+        The array representing the configuration or or Hubbard-Stratonovich field.
     nu : float
         The parameter ν defined by :math:'\cosh(ν) = e^{U Δτ / 2}'.
     exp_k : np.ndarray
         The matrix exponential of the kinetic Hamiltonian of the model.
     """
     # Compute and check time step size
-    dtau = beta / config.num_timesteps
+    dtau = model.beta / num_timesteps
     check = model.u * model.hop * dtau ** 2
     if check > 0.1:
         logger.warning("Increase number of time steps: Check-value %.2f should be <0.1!", check)
-
+    else:
+        logger.debug("Check-value %.2f is <0.1!", check)
+    # Initialize configuration
+    config = init_configuration(model.num_sites, num_timesteps)
     # Compute factor and matrix exponential of kinetic hamiltonian
     nu = np.arccosh(np.exp(model.u * dtau / 2.)) if model.u else 0
-    exp_k = la.expm(dtau * model.hamiltonian_kinetic())
+    exp_k = la.expm(-dtau * model.hamiltonian_kinetic())
 
-    return nu, exp_k
+    return config, nu, exp_k
 
 
+@jit(nopython=True)
 def bmatrix(exp_k, nu, config, t, sigma):
     r"""Computes the matrix :math:'B_σ(h_t)'.
 
@@ -74,11 +79,11 @@ def bmatrix(exp_k, nu, config, t, sigma):
 
     Parameters
     ----------
-    exp_k : np.ndarray
+    exp_k : (N, N) np.ndarray
         The matrix exponential of the kinetic hamiltonian.
     nu : float
         The parameter ν defined by :math:'\cosh(ν) = e^{U Δτ / 2}'
-    config : Configuration
+    config : (N, L) np.ndarray
         The configuration or Hubbard-Stratonovich field.
     t : int
         The index of the time step.
@@ -91,10 +96,11 @@ def bmatrix(exp_k, nu, config, t, sigma):
         The matrix :math:'B_{t, σ}(h_t)'.
     """
     diag = np.exp(sigma * nu * config[:, t])
-    return exp_k @ np.diag(diag)
+    return np.dot(exp_k, np.diag(diag))
 
 
-def mmatrix(exp_k, nu, config, sigma, t0=0):
+@jit(nopython=True)
+def mmatrix(exp_k, nu, config, sigma):
     r"""Computes the fermion matrix :math:'M_σ(h)'.
 
     Notes
@@ -110,24 +116,18 @@ def mmatrix(exp_k, nu, config, sigma, t0=0):
         The matrix exponential of the kinetic hamiltonian.
     nu : float
         The parameter ν defined by :math:'\cosh(ν) = e^{U Δτ / 2}'
-    config : Configuration
+    config : (N, L) np.ndarray
         The configuration or Hubbard-Stratonovich field.
     sigma : int
         The spin σ (-1 or +1).
-    t0 : int
-        The current time step index.
 
     Returns
     -------
     m : np.ndarray
         The fermion matrix :math:'M_{σ}(h)'.
     """
-    # Initialize the time indices of the B-matrices
-    # Starts with the last time step
-    times = range(config.num_timesteps)
-    times = list(reversed(times))
-    if t0:
-        times = times[-t0:] + times[:-t0]
+    # Initialize the time indices of the B-matrices (starts with the last time step)
+    times = np.arange(config.shape[1]-1, -1, -1)
 
     # First matrix
     b_prod = bmatrix(exp_k, nu, config, times[0], sigma)
@@ -136,7 +136,7 @@ def mmatrix(exp_k, nu, config, sigma, t0=0):
         b = bmatrix(exp_k, nu, config, t, sigma)
         b_prod = np.dot(b_prod, b)
     # Add identity matrix
-    return np.eye(config.num_sites) + b_prod
+    return np.eye(config.shape[0]) + b_prod
 
 
 def sample_acceptance(d):
@@ -155,7 +155,7 @@ def sample_acceptance(d):
     return random.random() < d
 
 
-def compute_det(exp_k, nu, config, t0=0):
+def compute_det(exp_k, nu, config):
     r"""Computes the product of the spin-up and -down determinants used for the acceptance ratio.
 
     Notes
@@ -170,7 +170,7 @@ def compute_det(exp_k, nu, config, t0=0):
         The matrix exponential of the kinetic hamiltonian.
     nu : float
         The parameter ν defined by :math:'\cosh(ν) = e^{U Δτ / 2}'
-    config : Configuration
+    config : (N, L) np.ndarray
         The configuration or Hubbard-Stratonovich field.
 
     Returns
@@ -178,11 +178,12 @@ def compute_det(exp_k, nu, config, t0=0):
     det_prod : float
         The product of the spin-up and -down determinants.
     """
-    m_up = mmatrix(exp_k, nu, config, sigma=UP, t0=t0)
-    m_dn = mmatrix(exp_k, nu, config, sigma=DN, t0=t0)
-    return float(la.det(m_up) * la.det(m_dn))
+    m_up = mmatrix(exp_k, nu, config, sigma=UP)
+    m_dn = mmatrix(exp_k, nu, config, sigma=DN)
+    return la.det(m_up) * la.det(m_dn)
 
 
+@jit(nopython=True)
 def compute_acceptance_det(old_det, new_det):
     r"""Computes the Metropolis acceptance via the determinants.
 
@@ -209,6 +210,7 @@ def compute_acceptance_det(old_det, new_det):
     return new_det / old_det
 
 
+@jit(nopython=True)
 def compute_acceptance_fast(nu, config, i, t, gf_up, gf_dn):
     r"""Computes the Metropolis acceptance via the fast update scheme.
 
@@ -224,7 +226,7 @@ def compute_acceptance_fast(nu, config, i, t, gf_up, gf_dn):
     ----------
     nu : float
         The parameter ν defined by :math:'\cosh(ν) = e^{U Δτ / 2}'
-    config : Configuration
+    config : (N, L) np.ndarray
         The configuration or Hubbard-Stratonovich field.
     i : int
         The site index :math:'i' of the proposed spin-flip.
@@ -257,7 +259,7 @@ def compute_greens(exp_k, nu, config):
         The matrix exponential of the kinetic hamiltonian.
     nu : float
         The parameter ν defined by :math:'\cosh(ν) = e^{U Δτ / 2}'
-    config : Configuration
+    config : (N, L) np.ndarray
         The configuration or Hubbard-Stratonovich field.
 
     Returns
@@ -291,7 +293,7 @@ def update_greens(nu, config, i, t, gf_up, gf_dn):
     ----------
     nu : float
         The parameter ν defined by :math:'\cosh(ν) = e^{U Δτ / 2}'
-    config : Configuration
+    config : (N, L) np.ndarray
         The configuration or Hubbard-Stratonovich field.
     i : int
         The site index :math:'i' of the proposed spin-flip.
@@ -337,7 +339,7 @@ def wrap_greens(exp_k, nu, config, t, gf_up, gf_dn):
         The matrix exponential of the kinetic hamiltonian.
     nu : float
         The parameter ν defined by :math:'\cosh(ν) = e^{U Δτ / 2}'
-    config : Configuration
+    config : (N, L) np.ndarray
         The configuration or Hubbard-Stratonovich field.
     t : int
         The time-step index :math:'t' of the last iteration over all sites.
@@ -372,7 +374,7 @@ def warmup_loop_det(exp_k, nu, config, sweeps=200):
         The matrix exponential of the kinetic hamiltonian.
     nu : float
         The parameter ν defined by :math:'\cosh(ν) = e^{U Δτ / 2}'
-    config : Configuration
+    config : (N, L) np.ndarray
         The configuration or Hubbard-Stratonovich field.
     sweeps : int, optional
         The number of full sweeps of the configuration array (hundreds).
@@ -391,7 +393,7 @@ def warmup_loop_det(exp_k, nu, config, sweeps=200):
             # Iterate over all lattice sites
             for i in range(config.num_sites):
                 # Propose update by flipping spin in confguration
-                config.update(i, t)
+                update_configuration(config, i, t)
                 # Compute determinant product of the new configuration
                 new_det = compute_det(exp_k, nu, config)
                 # Compute acceptance ratio
@@ -402,7 +404,7 @@ def warmup_loop_det(exp_k, nu, config, sweeps=200):
                     old_det = new_det
                 else:
                     # Move not accepted: Revert to the old configuration by updating again
-                    config.update(i, t)
+                    update_configuration(config, i, t)
     return old_det
 
 
@@ -415,7 +417,7 @@ def warmup_loop_fast(exp_k, nu, config, sweeps=200):
         The matrix exponential of the kinetic hamiltonian.
     nu : float
         The parameter ν defined by :math:'\cosh(ν) = e^{U Δτ / 2}'
-    config : Configuration
+    config : (N, L) np.ndarray
         The configuration or Hubbard-Stratonovich field.
     sweeps : int, optional
         The number of full sweeps of the configuration array (hundreds).
@@ -444,7 +446,7 @@ def warmup_loop_fast(exp_k, nu, config, sweeps=200):
                 if sample_acceptance(d):
                     # Move accepted: update configuration and Green's functions
                     gf_up, gf_dn = update_greens(nu, config, i, t, gf_up, gf_dn)
-                    config.update(i, t)
+                    update_configuration(config, i, t)
             # Wrap Green#s function between time steps
             gf_up, gf_dn = wrap_greens(exp_k, nu, config, t, gf_up, gf_dn)
     return gf_up, gf_dn

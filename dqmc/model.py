@@ -14,17 +14,18 @@ from scipy.sparse import diags
 
 class HubbardModel:
 
-    def __init__(self, num_sites, u=0.0, eps=0.0, hop=1.0, mu=0.):
+    def __init__(self, num_sites, u=0.0, eps=0.0, hop=1.0, mu=0., beta=1.):
         self.u = u
         self.hop = hop
         self.eps = eps
         self.mu = mu
         self.num_sites = num_sites
+        self.beta = beta
 
     @classmethod
-    def half_filled(cls, num_sites, u=0.0, eps=0.0, hop=1.0):
+    def half_filled(cls, num_sites, u=0.0, eps=0.0, hop=1.0, beta=1.):
         mu = u/2 - eps
-        return cls(num_sites, u, eps, hop, mu)
+        return cls(num_sites, u, eps, hop, mu, beta)
 
     def hamiltonian_kinetic(self, periodic=True):
         """Builds tridiagonal kinetic Hamiltonian for 1D Hubbard chain."""
