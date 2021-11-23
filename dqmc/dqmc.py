@@ -62,7 +62,7 @@ def init_qmc(model, num_timesteps):
     config = init_configuration(model.num_sites, num_timesteps)
     # Compute factor and matrix exponential of kinetic hamiltonian
     nu = np.arccosh(np.exp(model.u * dtau / 2.)) if model.u else 0
-    exp_k = la.expm(-dtau * model.hamiltonian_kinetic())
+    exp_k = la.expm(dtau * model.hamiltonian_kinetic())
 
     return config, nu, exp_k
 
@@ -96,7 +96,8 @@ def bmatrix(exp_k, nu, config, t, sigma):
         The matrix :math:'B_{t, σ}(h_t)'.
     """
     diag = np.exp(sigma * nu * config[:, t])
-    return np.dot(exp_k, np.diag(diag))
+    # return np.dot(exp_k, np.diag(diag))
+    return exp_k * diag
 
 
 @jit(nopython=True)
@@ -127,7 +128,7 @@ def mmatrix(exp_k, nu, config, sigma):
         The fermion matrix :math:'M_{σ}(h)'.
     """
     # Initialize the time indices of the B-matrices (starts with the last time step)
-    times = np.arange(config.shape[1]-1, -1, -1)
+    times = np.arange(config.shape[1])
 
     # First matrix
     b_prod = bmatrix(exp_k, nu, config, times[0], sigma)
@@ -356,9 +357,9 @@ def wrap_greens(exp_k, nu, config, t, gf_up, gf_dn):
         The wrapped spin-down Green's function.
     """
     b_up = bmatrix(exp_k, nu, config, t, sigma=UP)
-    b_dn = bmatrix(exp_k, nu, config, t, sigma=UP)
-    gf_up = np.dot(la.inv(b_up), np.dot(gf_up, b_up))
-    gf_dn = np.dot(la.inv(b_dn), np.dot(gf_dn, b_dn))
+    b_dn = bmatrix(exp_k, nu, config, t, sigma=DN)
+    gf_up = np.dot(np.dot(b_up, gf_up), la.inv(b_up))
+    gf_dn = np.dot(np.dot(b_dn, gf_dn), la.inv(b_dn))
     return gf_up, gf_dn
 
 
@@ -389,9 +390,9 @@ def warmup_loop_det(exp_k, nu, config, sweeps=200):
     # Warmup-sweeps
     for _ in range(sweeps):
         # Iterate over all time-steps
-        for t in reversed(range(config.num_timesteps)):
+        for t in range(config.shape[1]):
             # Iterate over all lattice sites
-            for i in range(config.num_sites):
+            for i in range(config.shape[0]):
                 # Propose update by flipping spin in confguration
                 update_configuration(config, i, t)
                 # Compute determinant product of the new configuration
@@ -437,9 +438,9 @@ def warmup_loop_fast(exp_k, nu, config, sweeps=200):
     # Warmup-sweeps
     for _ in range(sweeps):
         # Iterate over all time-steps
-        for t in reversed(range(config.num_timesteps)):
+        for t in range(config.shape[1]):
             # Iterate over all lattice sites
-            for i in range(config.num_sites):
+            for i in range(config.shape[0]):
                 # Compute acceptance ratio
                 d = compute_acceptance_fast(nu, config, i, t, gf_up, gf_dn)
                 # Check if move is accepted
