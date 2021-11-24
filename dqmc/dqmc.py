@@ -31,6 +31,20 @@ from .config import init_configuration, update_configuration, UP, DN
 
 logger = logging.getLogger("dqmc")
 
+RNG = np.random.default_rng(0)
+
+
+def iter_times(config, reverse=False):
+    items = range(config.shape[1])
+    return reversed(items) if reverse else items
+
+
+def iter_sites(config, rand=False):
+    sites = np.arange(config.shape[0])
+    if rand:
+        RNG.shuffle(sites)
+    return sites
+
 
 def init_qmc(model, num_timesteps):
     r"""Initializes configuration and static variables of the QMC algorithm.
