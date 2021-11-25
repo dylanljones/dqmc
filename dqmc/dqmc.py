@@ -65,6 +65,9 @@ def init_qmc(model, num_timesteps):
     exp_k : np.ndarray
         The matrix exponential of the kinetic Hamiltonian of the model.
     """
+    # Build quadratic terms of Hamiltonian
+    ham_k = model.hamiltonian_kinetic()
+
     # Compute and check time step size
     dtau = model.beta / num_timesteps
     check = model.u * model.hop * dtau ** 2
@@ -72,13 +75,18 @@ def init_qmc(model, num_timesteps):
         logger.warning("Increase number of time steps: Check-value %.2f should be <0.1!", check)
     else:
         logger.debug("Check-value %.2f is <0.1!", check)
-    # Initialize configuration
-    config = init_configuration(model.num_sites, num_timesteps)
+
     # Compute factor and matrix exponential of kinetic hamiltonian
     nu = np.arccosh(np.exp(model.u * dtau / 2.)) if model.u else 0
-    exp_k = la.expm(dtau * model.hamiltonian_kinetic())
+    logger.debug("nu=%s", nu)
 
-    return config, nu, exp_k
+    exp_k = la.expm(dtau * ham_k)
+    logger.debug("exp_k=%s", exp_k)
+
+    # Initialize configuration with random -1 and
+    config = init_configuration(model.num_sites, num_timesteps)
+
+    return exp_k, nu, config
 
 
 @jit(nopython=True)
@@ -167,7 +175,7 @@ def sample_acceptance(d):
     accepted : bool
         Flag if the proposed update is accepted or not.
     """
-    return random.random() < d
+    return RNG.random() < d
 
 
 def compute_det(exp_k, nu, config):
@@ -258,8 +266,8 @@ def compute_acceptance_fast(nu, config, i, t, gf_up, gf_dn):
         The Metropolis acceptance ratio.
     """
     arg = -2 * nu * config[i, t]
-    alpha_up = (np.exp(UP * arg) - 1)
-    alpha_dn = (np.exp(DN * arg) - 1)
+    alpha_up = np.expm1(UP * arg)
+    alpha_dn = np.expm1(DN * arg)
     d_up = 1 + alpha_up * (1 - gf_up[i, i])
     d_dn = 1 + alpha_dn * (1 - gf_dn[i, i])
     return d_up * d_dn
@@ -328,8 +336,8 @@ def update_greens(nu, config, i, t, gf_up, gf_dn):
     """
     # Compute alphas
     arg = -2 * nu * config[i, t]
-    alpha_up = (np.exp(UP * arg) - 1)
-    alpha_dn = (np.exp(DN * arg) - 1)
+    alpha_up = np.expm1(UP * arg)
+    alpha_dn = np.expm1(DN * arg)
     # Compute c-vectors for all j
     c_up = -alpha_up * gf_up[i, :]
     c_dn = -alpha_dn * gf_dn[i, :]
