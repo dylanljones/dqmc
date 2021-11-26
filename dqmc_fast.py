@@ -169,7 +169,7 @@ class DQMC:
         for sweep in range(sweeps):
             acc_ratio = self.dqmc_iteration()
             ratios.append(acc_ratio)
-            logger.info("Ratio: %.2f", acc_ratio)
+            logger.info("[%3d] Ratio: %.2f", sweep, acc_ratio)
             self.compute_time_step_matrices()
             self.compute_greens_functions()
         return ratios
@@ -190,9 +190,9 @@ def main():
     ax.set_xlabel("Seeep")
     ax.set_ylabel("Ratio")
 
-    fig, ax = plt.subplots()
-    ax.plot(dqmc.logdets_up)
-    ax.plot(dqmc.logdets_dn)
+    # fig, ax = plt.subplots()
+    # ax.plot(dqmc.logdets_up)
+    # ax.plot(dqmc.logdets_dn)
     plt.show()
 
 

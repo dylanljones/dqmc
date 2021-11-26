@@ -78,15 +78,20 @@ def compute_m_matrices(bmats_up, bmats_dn, order=None):
     return m_up, m_dn
 
 
-def init_config(num_sites, num_timesteps):
-    return
+def measure_occupation(m_up, m_dn):
+    occ_up = 1 - np.diag(la.inv(m_up))
+    occ_dn = 1 - np.diag(la.inv(m_dn))
+    return occ_up, occ_dn
 
 
 def main():
-    time_dir = +1
-    sweeps = 300
+    time_dir = -1
+    warmup = 500
+    measurement = 1000
+    sweeps = warmup + measurement
+
     num_timesteps = 50
-    model = HubbardModel(10, u=2.0, hop=1.0, beta=5)
+    model = HubbardModel(num_sites=10, u=10, hop=.1, eps=-5, beta=2)
 
     # Initialize QMC simulation
     # -------------------------
@@ -105,6 +110,7 @@ def main():
 
     # Compute factor and matrix exponential of kinetic hamiltonian
     nu = math.acosh(math.exp(model.u * dtau / 2.))
+
     exp_k = la.expm(dtau * ham_k)
 
     # Run QMC warmup sweeps
@@ -125,6 +131,7 @@ def main():
     times = np.arange(config.shape[1])[::time_dir]
     sites = np.arange(config.shape[0])
 
+    occupation_up, occupation_dn = 0, 0
     for sweep in range(sweeps):
         logger.debug("SWEEP %s", sweep)
         logger.debug("----------------")
@@ -171,6 +178,17 @@ def main():
         ratios.append(acc_ratio)
         logger.info("[%3d] Ratio: %.2f", sweep, acc_ratio)
 
+        # perform measurements
+        if sweep > warmup:
+            m_up, m_dn = compute_m_matrices(bmats_up, bmats_dn, time_order)
+            occ_up, occ_dn = measure_occupation(m_up, m_dn)
+            occupation_up += occ_up
+            occupation_dn += occ_dn
+
+    # Normalize measurements
+    occupation_up /= measurement
+    occupation_dn /= measurement
+    print(occupation_up, occupation_dn)
     # plot acceptance ratio
     fig, ax = plt.subplots()
     ax.plot(ratios)
