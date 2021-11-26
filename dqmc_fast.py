@@ -12,7 +12,6 @@ import scipy.linalg as la
 import matplotlib.pyplot as plt
 from numba import njit
 from dqmc import HubbardModel, UP, DN, init_configuration
-from dqmc.utils import Plot
 
 logger = logging.getLogger("dqmc")
 logger.setLevel(logging.INFO)
