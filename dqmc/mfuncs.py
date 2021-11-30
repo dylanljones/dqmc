@@ -15,3 +15,15 @@ import numpy as np
 
 def occupation(gf_up, gf_dn):
     return 1 - np.array([np.diag(gf_up), np.diag(gf_dn)])
+
+
+def spin_z(gf_up, gf_dn):
+    n_up = 1 - np.diag(gf_up)
+    n_dn = 1 - np.diag(gf_dn)
+    return n_up - n_dn
+
+
+def mz_moment(gf_up, gf_dn):
+    n_up = 1 - np.diag(gf_up)
+    n_dn = 1 - np.diag(gf_dn)
+    return n_up + n_dn - 2 * n_up * n_dn
