@@ -27,7 +27,7 @@ from numba import types as nt
 from .config import UP, DN
 
 
-@njit(float64[:, :](float64[:, :], float64, int8[:, :], int64, int64))
+@njit(float64[:, :](float64[:, :], float64, int8[:, :], int64, int64), cache=True)
 def compute_timestep_mat(exp_k, nu, config, t, sigma):
     r"""Computes the time step matrix :math:'B_σ(h_t)'.
 
@@ -61,7 +61,7 @@ def compute_timestep_mat(exp_k, nu, config, t, sigma):
     return exp_k * np.exp(sigma * nu * config[:, t])
 
 
-@njit(nt.UniTuple(float64[:, :, :], 2)(float64[:, :], float64, int8[:, :]))
+@njit(nt.UniTuple(float64[:, :, :], 2)(float64[:, :], float64, int8[:, :]), cache=True)
 def compute_timestep_mats(exp_k, nu, config):
     r"""Computes the time step matrices :math:'B_σ(h_t)' for all times `t` and both spins.
 
@@ -96,7 +96,7 @@ def compute_timestep_mats(exp_k, nu, config):
     return np.ascontiguousarray(bmats_up), np.ascontiguousarray(bmats_dn)
 
 
-@njit(void(float64[:, :], float64, int8[:, :], float64[:, :, :], float64[:, :, :], int64))
+@njit(void(float64[:, :], float64, int8[:, :], float64[:, :, :], float64[:, :, :], int64), cache=True)
 def update_timestep_mats(exp_k, nu, config, bmats_up, bmats_dn, t):
     r"""Updates one time step matrices :math:'B_σ(h_t)' for one time step.
 
@@ -119,7 +119,7 @@ def update_timestep_mats(exp_k, nu, config, bmats_up, bmats_dn, t):
     bmats_dn[t] = compute_timestep_mat(exp_k, nu, config, t, sigma=DN)
 
 
-@njit(float64[:, :](float64[:, :, :], int64[:]))
+@njit(float64[:, :](float64[:, :, :], int64[:]), cache=True)
 def compute_timeflow_map(bmats, order):
     r"""Computes the fermion time flow map matrix :math:'A_σ(h)'.
 
@@ -152,7 +152,8 @@ def compute_timeflow_map(bmats, order):
     return b_prod
 
 
-@njit  # (nt.UniTuple(float64[:, :, :], 2)(float64[:, :, :], float64[:, :, :], nt.Omitted(int64[:])))
+# (nt.UniTuple(float64[:, :, :], 2)(float64[:, :, :], float64[:, :, :], nt.Omitted(int64[:])))
+@njit(cache=True)
 def compute_m_matrices(bmats_up, bmats_dn, order=None):
     r"""Computes the matrix :math:'M_σ = I + A_σ(h)' for both spins.
 

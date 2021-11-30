@@ -27,14 +27,13 @@ import logging
 import numpy as np
 import scipy.linalg as la
 from abc import ABC, abstractmethod
-from numba import jit, njit, float64, int8, int64
+from numba import njit, float64, int8, int64, void
 from numba import types as nt
 from .model import HubbardModel
-from .config import init_configuration, update_configuration, UP, DN
+from .config import init_configuration, UP, DN
 from .time_flow import compute_timestep_mats, compute_m_matrices, update_timestep_mats
-logger = logging.getLogger("dqmc")
 
-RNG = np.random.default_rng(0)
+logger = logging.getLogger("dqmc")
 
 matf64 = float64[:, :]
 mati8 = int8[:, :]
@@ -141,6 +140,8 @@ class BaseDQMC(ABC):
 # =========================================================================
 
 
+@njit(nt.Tuple((float64, int64))(matf64, float64, mati8, tenf64, tenf64, float64, int64[:]),
+      cache=True)
 def iteration_det(exp_k, nu, config, bmats_up, bmats_dn, old_det, times):
     r"""Runs one iteration of the determinant DQMC-scheme.
 
@@ -204,7 +205,7 @@ def iteration_det(exp_k, nu, config, bmats_up, bmats_dn, old_det, times):
 # =========================================================================
 
 
-@njit(nt.float64(float64, mati8, matf64, matf64, int64, int64))
+@njit(nt.float64(float64, mati8, matf64, matf64, int64, int64), cache=True)
 def compute_acceptance_fast(nu, config, gf_up, gf_dn, i, t):
     r"""Computes the Metropolis acceptance via the fast update scheme.
 
@@ -244,7 +245,7 @@ def compute_acceptance_fast(nu, config, gf_up, gf_dn, i, t):
     return min(abs(d_up * d_dn), 1.)
 
 
-@njit(nt.UniTuple(matf64, 2)(float64, mati8, matf64, matf64, int64, int64))
+@njit(void(float64, mati8, matf64, matf64, int64, int64), cache=True)
 def update_greens(nu, config, gf_up, gf_dn, i, t):
     r"""Updates the Green's function after accepting a spin-flip.
 
@@ -289,10 +290,10 @@ def update_greens(nu, config, gf_up, gf_dn, i, t):
     # Compute outer product of b and c and update GF for all j and k
     gf_up -= np.outer(b_up, c_up)
     gf_dn -= np.outer(b_dn, c_dn)
-    return gf_up, gf_dn
+    # return gf_up, gf_dn
 
 
-@njit(nt.UniTuple(matf64, 2)(tenf64, tenf64, matf64, matf64, int64))
+@njit(void(tenf64, tenf64, matf64, matf64, int64), cache=True)
 def wrap_greens(bmats_up, bmats_dn, gf_up, gf_dn, t):
     r"""Wraps the Green's functions between the time step :math:'t' and :math:'t+1'.
 
@@ -313,10 +314,10 @@ def wrap_greens(bmats_up, bmats_dn, gf_up, gf_dn, t):
     b_dn = bmats_dn[t]
     gf_up[:] = np.dot(np.dot(b_up, gf_up), np.linalg.inv(b_up))
     gf_dn[:] = np.dot(np.dot(b_dn, gf_dn), np.linalg.inv(b_dn))
-    return gf_up, gf_dn
+    # return gf_up, gf_dn
 
 
-@njit(nt.Tuple((matf64, matf64, int64))(matf64, float64, mati8, tenf64, tenf64, matf64, matf64, int64[:]))
+@njit(int64(matf64, float64, mati8, tenf64, tenf64, matf64, matf64, int64[:]), cache=True)
 def iteration_fast(exp_k, nu, config, bmats_up, bmats_dn, gf_up, gf_dn, times):
     r"""Runs one iteration of the rank-1 DQMC-scheme.
 
@@ -360,12 +361,11 @@ def iteration_fast(exp_k, nu, config, bmats_up, bmats_dn, gf_up, gf_dn, times):
             # Check if move is accepted
             accept = random.random() < d
             if accept:
-                gf_up, gf_dn = update_greens(nu, config, gf_up, gf_dn, i, t)
+                update_greens(nu, config, gf_up, gf_dn, i, t)
                 # Move accepted: Continue using the new configuration
                 accepted += 1
                 config[i, t] = - config[i, t]
                 update_timestep_mats(exp_k, nu, config, bmats_up, bmats_dn, t)
         # Wrap Green's function between time steps
-        gf_up, gf_dn = wrap_greens(bmats_up, bmats_dn, gf_up, gf_dn, t)
-
-    return gf_up, gf_dn, accepted
+        wrap_greens(bmats_up, bmats_dn, gf_up, gf_dn, t)
+    return accepted
