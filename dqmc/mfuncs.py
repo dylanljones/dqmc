@@ -8,8 +8,10 @@
 # LICENSE file in the root directory and this permission notice shall
 # be included in all copies or substantial portions of the Software.
 
-from .logging import logger
-from .config import init_configuration, update_configuration, UP, DN, ConfigurationPlot
-from .model import HubbardModel
-from .time_flow import compute_timestep_mats, update_timestep_mats, compute_m_matrices
-from .dqmc import BaseDQMC, iteration_det, iteration_fast
+"""This module contains methods to use for the measurement of observables in the QMC simulation."""
+
+import numpy as np
+
+
+def occupation(gf_up, gf_dn):
+    return 1 - np.array([np.diag(gf_up), np.diag(gf_dn)])

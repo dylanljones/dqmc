@@ -8,13 +8,27 @@
 # LICENSE file in the root directory and this permission notice shall
 # be included in all copies or substantial portions of the Software.
 
+"""This module contains methods for handling the time-step m,atrices from ref [1]_
+
+Notes
+-----
+The time slice index is called `t` instead of the `l` of the reference.
+
+References
+----------
+.. [1] Z. Bai et al., “Numerical Methods for Quantum Monte Carlo Simulations
+       of the Hubbard Model”, in Series in Contemporary Applied Mathematics,
+       Vol. 12 (June 2009), p. 1.
+"""
+
 import numpy as np
-from numba import njit
+from numba import njit, float64, int8, int64, void
+from numba import types as nt
 from .config import UP, DN
 
 
-@njit
-def compute_time_step_matrix(exp_k, nu, config, t, sigma):
+@njit(float64[:, :](float64[:, :], float64, int8[:, :], int64, int64))
+def compute_timestep_mat(exp_k, nu, config, t, sigma):
     r"""Computes the time step matrix :math:'B_σ(h_t)'.
 
     Notes
@@ -47,9 +61,9 @@ def compute_time_step_matrix(exp_k, nu, config, t, sigma):
     return exp_k * np.exp(sigma * nu * config[:, t])
 
 
-@njit
-def compute_time_step_matrices(exp_k, nu, config, sigma):
-    r"""Computes the time step matrices :math:'B_σ(h_t)' for all times `t`.
+@njit(nt.UniTuple(float64[:, :, :], 2)(float64[:, :], float64, int8[:, :]))
+def compute_timestep_mats(exp_k, nu, config):
+    r"""Computes the time step matrices :math:'B_σ(h_t)' for all times `t` and both spins.
 
     Notes
     -----
@@ -65,26 +79,28 @@ def compute_time_step_matrices(exp_k, nu, config, sigma):
         The parameter ν defined by :math:'\cosh(ν) = e^{U Δτ / 2}'
     config : (N, L) np.ndarray
         The configuration or Hubbard-Stratonovich field.
-    sigma : int
-        The spin σ (-1 or +1).
 
     Returns
     -------
-    bmats : (L, N, N) np.ndarray
-        The time step matrices.
+    bmats_up : (L, N, N) np.ndarray
+        The spin-up time step matrices.
+    bmats_dn : (L, N, N) np.ndarray
+        The spin-down time step matrices.
     """
     num_sites, num_timesteps = config.shape
-    bmats = np.zeros((num_timesteps, num_sites, num_sites))
+    bmats_up = np.zeros((num_timesteps, num_sites, num_sites), dtype=np.float64)
+    bmats_dn = np.zeros((num_timesteps, num_sites, num_sites), dtype=np.float64)
     for t in range(num_timesteps):
-        bmats[t] = exp_k * np.exp(sigma * nu * config[:, t])
-    return bmats
+        bmats_up[t] = compute_timestep_mat(exp_k, nu, config, t, sigma=UP)
+        bmats_dn[t] = compute_timestep_mat(exp_k, nu, config, t, sigma=DN)
+    return np.ascontiguousarray(bmats_up), np.ascontiguousarray(bmats_dn)
 
 
-@njit
-def update_time_step_matrices(exp_k, nu, config, bmats_up, bmats_dn, t):
-    r"""Updates one time step matrix :math:'B_σ(h_t)' for one time step.
+@njit(void(float64[:, :], float64, int8[:, :], float64[:, :, :], float64[:, :, :], int64))
+def update_timestep_mats(exp_k, nu, config, bmats_up, bmats_dn, t):
+    r"""Updates one time step matrices :math:'B_σ(h_t)' for one time step.
 
-    Parameters
+    Parametersc
     ----------
     exp_k : (N, N) np.ndarray
         The matrix exponential of the kinetic hamiltonian.
@@ -99,12 +115,12 @@ def update_time_step_matrices(exp_k, nu, config, bmats_up, bmats_dn, t):
     t : int
         The index of the time step matrix to update.
     """
-    bmats_up[t] = exp_k * np.exp(UP * nu * config[:, t])
-    bmats_dn[t] = exp_k * np.exp(DN * nu * config[:, t])
+    bmats_up[t] = compute_timestep_mat(exp_k, nu, config, t, sigma=UP)
+    bmats_dn[t] = compute_timestep_mat(exp_k, nu, config, t, sigma=DN)
 
 
-@njit
-def compute_time_flow_map(bmats, order=None):
+@njit(float64[:, :](float64[:, :, :], int64[:]))
+def compute_timeflow_map(bmats, order):
     r"""Computes the fermion time flow map matrix :math:'A_σ(h)'.
 
     Notes
@@ -134,3 +150,32 @@ def compute_time_flow_map(bmats, order=None):
     for i in order[1:]:
         b_prod = np.dot(b_prod, bmats[i])
     return b_prod
+
+
+@njit  # (nt.UniTuple(float64[:, :, :], 2)(float64[:, :, :], float64[:, :, :], nt.Omitted(int64[:])))
+def compute_m_matrices(bmats_up, bmats_dn, order=None):
+    r"""Computes the matrix :math:'M_σ = I + A_σ(h)' for both spins.
+
+    Parameters
+    ----------
+    bmats_up : (L, N, N) np.ndarray
+        The spin-up time step matrices.
+    bmats_dn : (L, N, N) np.ndarray
+        The spin-down time step matrices.
+    order : np.ndarray, optional
+        The order used for multiplying the :math:'B' matrices.
+        The default the ascending order, starting from the first time step.
+
+    Returns
+    -------
+    m_up : (N, N) np.ndarray
+        The spin-up :math:'M' matrix.
+    m_dn : (N, N) np.ndarray
+        The spin-down :math:'M' matrix.
+    """
+    if order is None:
+        order = np.arange(len(bmats_up), dtype=np.int64)
+    eye = np.eye(bmats_up[0].shape[0])
+    m_up = eye + compute_timeflow_map(bmats_up, order)
+    m_dn = eye + compute_timeflow_map(bmats_dn, order)
+    return m_up, m_dn
