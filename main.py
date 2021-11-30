@@ -4,21 +4,16 @@
 #
 # Copyright (c) 2021, Dylan Jones
 
-import random
 import logging
 import numpy as np
 import matplotlib.pyplot as plt
-from dqmc import HubbardModel, mfuncs
-from dqmc.dqmc import BaseDQMC, iteration_det
-from dqmc.time_flow import compute_m_matrices
+from dqmc import HubbardModel, BaseDQMC, iteration_fast, mfuncs, compute_m_matrices, iteration_det
 
 logger = logging.getLogger("dqmc")
 logger.setLevel(logging.INFO)
 
-random.seed(0)
 
-
-class DQMC(BaseDQMC):
+class DetDQMC(BaseDQMC):
 
     def __init__(self, model, num_timesteps, time_dir=+1):
         self._old_det = 0
@@ -39,11 +34,36 @@ class DQMC(BaseDQMC):
         self.acceptance_probs.append(acc_ratio)
 
 
+class FastDQMC(BaseDQMC):
+
+    def __init__(self, model, num_timesteps):
+        self.gf_up = np.empty([])
+        self.gf_dn = np.empty([])
+        super().__init__(model, num_timesteps, time_dir=+1)
+
+    def initialize(self):
+        self.gf_up, self.gf_dn = self.greens()
+
+    def iteration(self):
+        gf_up, gf_dn, accepted = iteration_fast(self.exp_k, self.nu, self.config,
+                                                self.bmats_up, self.bmats_dn,
+                                                self.gf_up, self.gf_dn, self.times)
+        self.gf_up = gf_up
+        self.gf_dn = gf_dn
+        # Compute and save acceptance ratio
+        acc_ratio = accepted / self.config.size
+        self.acceptance_probs.append(acc_ratio)
+
+    def get_greens2(self):
+        return self.gf_up, self.gf_dn
+
+
 def main():
-    warmup = 500
-    measure = 1000
+    warmup = 1000
+    measure = 5000
     model = HubbardModel(10, u=2.0, hop=1.0, beta=2)
-    dqmc = DQMC(model, num_timesteps=100)
+
+    dqmc = FastDQMC(model, num_timesteps=100)
     occ = dqmc.simulate(warmup, measure, callback=mfuncs.occupation)
 
     print(occ[0])
