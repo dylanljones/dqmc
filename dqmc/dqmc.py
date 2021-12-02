@@ -31,13 +31,13 @@ from numba import njit, float64, int8, int64, void
 from numba import types as nt
 from .model import HubbardModel
 from .config import init_configuration, UP, DN
-from .time_flow import compute_timestep_mats, compute_m_matrices, update_timestep_mats
 
 logger = logging.getLogger("dqmc")
 
-matf64 = float64[:, :]
-mati8 = int8[:, :]
-tenf64 = float64[:, :, :]
+expk_t = float64[:, :]
+conf_t = int8[:, :]
+bmat_t = float64[:, :, ::1]
+gmat_t = float64[:, ::1]
 
 
 def init_qmc(model, num_timesteps):
@@ -83,56 +83,159 @@ def init_qmc(model, num_timesteps):
     return exp_k, nu, config
 
 
-class BaseDQMC(ABC):
+# =========================================================================
+# Time flow methods
+# =========================================================================
 
-    def __init__(self, model, num_timesteps, time_dir=+1):
-        # Init QMC variables
-        self.exp_k, self.nu, self.config = init_qmc(model, num_timesteps)
 
-        # Set up time direction and order of inner loops
-        self.time_order = np.arange(self.config.shape[1])[::time_dir]
-        self.times = np.arange(self.config.shape[1])[::time_dir]
-        self.sites = np.arange(self.config.shape[0])
+@njit(float64[:, ::1](expk_t, float64, conf_t, int64, int64), cache=True)
+def compute_timestep_mat(exp_k, nu, config, t, sigma):
+    r"""Computes the time step matrix :math:'B_σ(h_t)'.
 
-        # Pre-compute time flow matrices
-        self.bmats_up, self.bmats_dn = compute_timestep_mats(self.exp_k, self.nu, self.config)
+    Notes
+    -----
+    The time step matrix :math:'B_σ(h_t)' is defined as
+    ..math::
+        B_σ(h_t) = e^k e^{σ ν V_t(h_t)}
 
-        # Initialize QMC statistics
-        self.status = ""
-        self.acceptance_probs = list()
+    Simply multiplying the matrix exponential of the kinetic Hamiltonian with the diagonal
+    elements of the second matrix yields the same result as using `np.dot` with `np.diag`.
 
-        # Initialization callback
-        self.initialize()
+    Parameters
+    ----------
+    exp_k : (N, N) np.ndarray
+        The matrix exponential of the kinetic hamiltonian.
+    nu : float
+        The parameter ν defined by :math:'\cosh(ν) = e^{U Δτ / 2}'
+    config : (N, L) np.ndarray
+        The configuration or Hubbard-Stratonovich field.
+    t : int
+        The index of the time step.
+    sigma : int
+        The spin σ (-1 or +1).
 
-    def initialize(self):
-        pass
+    Returns
+    -------
+    b : (N, N) np.ndarray
+        The matrix :math:'B_{t, σ}(h_t)'.
+    """
+    return exp_k * np.exp(sigma * nu * config[:, t])
 
-    @abstractmethod
-    def iteration(self):
-        pass
 
-    def greens(self):
-        m_up, m_dn = compute_m_matrices(self.bmats_up, self.bmats_dn, self.time_order)
-        return la.inv(m_up), la.inv(m_dn)
+@njit(nt.UniTuple(bmat_t, 2)(expk_t, float64, conf_t), cache=True)
+def compute_timestep_mats(exp_k, nu, config):
+    r"""Computes the time step matrices :math:'B_σ(h_t)' for all times `t` and both spins.
 
-    def get_greens(self):
-        return self.greens()
+    Notes
+    -----
+    The time step matrix :math:'B_σ(h_t)' is defined as
+    ..math::
+        B_σ(h_t) = e^k e^{σ ν V_t(h_t)}
 
-    def simulate(self, warmup, measure, callback):
-        sweeps = warmup + measure
-        out = 0.
-        # Run sweeps
-        self.status = "warmup"
-        for sweep in range(sweeps):
-            self.iteration()
-            logger.info("[%s] %3d Ratio: %.2f", self.status, sweep, self.acceptance_probs[-1])
-            # perform measurements
-            if sweep > warmup:
-                self.status = "measurements"
-                if callback is not None:
-                    gf_up, gf_dn = self.greens()
-                    out += callback(gf_up, gf_dn)
-        return out / measure
+    Parameters
+    ----------
+    exp_k : (N, N) np.ndarray
+        The matrix exponential of the kinetic hamiltonian.
+    nu : float
+        The parameter ν defined by :math:'\cosh(ν) = e^{U Δτ / 2}'
+    config : (N, L) np.ndarray
+        The configuration or Hubbard-Stratonovich field.
+
+    Returns
+    -------
+    bmats_up : (L, N, N) np.ndarray
+        The spin-up time step matrices.
+    bmats_dn : (L, N, N) np.ndarray
+        The spin-down time step matrices.
+    """
+    num_sites, num_timesteps = config.shape
+    bmats_up = np.zeros((num_timesteps, num_sites, num_sites), dtype=np.float64)
+    bmats_dn = np.zeros((num_timesteps, num_sites, num_sites), dtype=np.float64)
+    for t in range(num_timesteps):
+        bmats_up[t] = compute_timestep_mat(exp_k, nu, config, t, sigma=UP)
+        bmats_dn[t] = compute_timestep_mat(exp_k, nu, config, t, sigma=DN)
+    return np.ascontiguousarray(bmats_up), np.ascontiguousarray(bmats_dn)
+
+
+@njit(void(expk_t, float64, conf_t, bmat_t, bmat_t, int64), cache=True)
+def update_timestep_mats(exp_k, nu, config, bmats_up, bmats_dn, t):
+    r"""Updates one time step matrices :math:'B_σ(h_t)' for one time step.
+
+    Parametersc
+    ----------
+    exp_k : (N, N) np.ndarray
+        The matrix exponential of the kinetic hamiltonian.
+    nu : float
+        The parameter ν defined by :math:'\cosh(ν) = e^{U Δτ / 2}'
+    config : (N, L) np.ndarray
+        The configuration or Hubbard-Stratonovich field.
+    bmats_up : (L, N, N) np.ndarray
+        The spin-up time step matrices.
+    bmats_dn : (L, N, N) np.ndarray
+        The spin-down time step matrices.
+    t : int
+        The index of the time step matrix to update.
+    """
+    bmats_up[t] = compute_timestep_mat(exp_k, nu, config, t, sigma=UP)
+    bmats_dn[t] = compute_timestep_mat(exp_k, nu, config, t, sigma=DN)
+
+
+@njit(float64[:, :](bmat_t, int64[:]), cache=True)
+def compute_timeflow_map(bmats, order):
+    r"""Computes the fermion time flow map matrix :math:'A_σ(h)'.
+
+    Notes
+    -----
+    The matrix :math:'A_σ' is defined as
+    ..math::
+        A_σ = B_σ(1) B_σ(2) ... B_σ(L)
+
+    Parameters
+    ----------
+    bmats : (L, N, N) np.ndarray
+        The time step matrices.
+    order : np.ndarray
+        The order used for multiplying the :math:'B' matrices.
+
+    Returns
+    -------
+    a : (N, N) np.ndarray
+        The time flow map matrix :math:'A_{σ}(h)'.
+    """
+    # First matrix
+    b_prod = bmats[order[0]]
+    # Following matrices multiplied with dot-product
+    for i in order[1:]:
+        b_prod = np.dot(b_prod, bmats[i])
+    return b_prod
+
+
+@njit(nt.UniTuple(float64[:, ::1], 2)(bmat_t, bmat_t, int64[:]))
+def compute_m_matrices(bmats_up, bmats_dn, order):
+    r"""Computes the matrix :math:'M_σ = I + A_σ(h)' for both spins.
+
+    Parameters
+    ----------
+    bmats_up : (L, N, N) np.ndarray
+        The spin-up time step matrices.
+    bmats_dn : (L, N, N) np.ndarray
+        The spin-down time step matrices.
+    order : np.ndarray, optional
+        The order used for multiplying the :math:'B' matrices.
+
+    Returns
+    -------
+    m_up : (N, N) np.ndarray
+        The spin-up :math:'M' matrix.
+    m_dn : (N, N) np.ndarray
+        The spin-down :math:'M' matrix.
+    """
+    if order is None:
+        order = np.arange(len(bmats_up), dtype=np.int64)
+    eye = np.eye(bmats_up[0].shape[0], dtype=np.float64)
+    m_up = eye + compute_timeflow_map(bmats_up, order)
+    m_dn = eye + compute_timeflow_map(bmats_dn, order)
+    return m_up, m_dn
 
 
 # =========================================================================
@@ -140,7 +243,7 @@ class BaseDQMC(ABC):
 # =========================================================================
 
 
-@njit(nt.Tuple((float64, int64))(matf64, float64, mati8, tenf64, tenf64, float64, int64[:]),
+@njit(nt.Tuple((float64, int64))(expk_t, float64, conf_t, bmat_t, bmat_t, float64, int64[:]),
       cache=True)
 def iteration_det(exp_k, nu, config, bmats_up, bmats_dn, old_det, times):
     r"""Runs one iteration of the determinant DQMC-scheme.
@@ -205,7 +308,7 @@ def iteration_det(exp_k, nu, config, bmats_up, bmats_dn, old_det, times):
 # =========================================================================
 
 
-@njit(nt.float64(float64, mati8, matf64, matf64, int64, int64), cache=True)
+@njit(nt.float64(float64, conf_t, gmat_t, gmat_t, int64, int64), cache=True)
 def compute_acceptance_fast(nu, config, gf_up, gf_dn, i, t):
     r"""Computes the Metropolis acceptance via the fast update scheme.
 
@@ -245,7 +348,7 @@ def compute_acceptance_fast(nu, config, gf_up, gf_dn, i, t):
     return min(abs(d_up * d_dn), 1.)
 
 
-@njit(void(float64, mati8, matf64, matf64, int64, int64), cache=True)
+@njit(void(float64, conf_t, gmat_t, gmat_t, int64, int64), cache=True)
 def update_greens(nu, config, gf_up, gf_dn, i, t):
     r"""Updates the Green's function after accepting a spin-flip.
 
@@ -290,10 +393,9 @@ def update_greens(nu, config, gf_up, gf_dn, i, t):
     # Compute outer product of b and c and update GF for all j and k
     gf_up -= np.outer(b_up, c_up)
     gf_dn -= np.outer(b_dn, c_dn)
-    # return gf_up, gf_dn
 
 
-@njit(void(tenf64, tenf64, matf64, matf64, int64), cache=True)
+@njit(void(bmat_t, bmat_t, gmat_t, gmat_t, int64), cache=True)
 def wrap_greens(bmats_up, bmats_dn, gf_up, gf_dn, t):
     r"""Wraps the Green's functions between the time step :math:'t' and :math:'t+1'.
 
@@ -314,10 +416,9 @@ def wrap_greens(bmats_up, bmats_dn, gf_up, gf_dn, t):
     b_dn = bmats_dn[t]
     gf_up[:] = np.dot(np.dot(b_up, gf_up), np.linalg.inv(b_up))
     gf_dn[:] = np.dot(np.dot(b_dn, gf_dn), np.linalg.inv(b_dn))
-    # return gf_up, gf_dn
 
 
-@njit(int64(matf64, float64, mati8, tenf64, tenf64, matf64, matf64, int64[:]), cache=True)
+@njit(int64(expk_t, float64, conf_t, bmat_t, bmat_t, gmat_t, gmat_t, int64[:]), cache=True)
 def iteration_fast(exp_k, nu, config, bmats_up, bmats_dn, gf_up, gf_dn, times):
     r"""Runs one iteration of the rank-1 DQMC-scheme.
 
@@ -349,6 +450,8 @@ def iteration_fast(exp_k, nu, config, bmats_up, bmats_dn, gf_up, gf_dn, times):
     accepted : int
         The number of accepted spin flips.
     """
+    # Todo: UpdateGreen's before or after config-flip?
+
     accepted = 0
     sites = np.arange(config.shape[0])
     # Iterate over all time-steps
@@ -361,11 +464,72 @@ def iteration_fast(exp_k, nu, config, bmats_up, bmats_dn, gf_up, gf_dn, times):
             # Check if move is accepted
             accept = random.random() < d
             if accept:
-                update_greens(nu, config, gf_up, gf_dn, i, t)
-                # Move accepted: Continue using the new configuration
+                # Move accepted
                 accepted += 1
                 config[i, t] = - config[i, t]
+                # Update Green's functions
+                update_greens(nu, config, gf_up, gf_dn, i, t)
+                # Update configuration and corresponding B-matrices
                 update_timestep_mats(exp_k, nu, config, bmats_up, bmats_dn, t)
         # Wrap Green's function between time steps
         wrap_greens(bmats_up, bmats_dn, gf_up, gf_dn, t)
     return accepted
+
+
+# =========================================================================
+# Base DQMC class
+# =========================================================================
+
+
+class BaseDQMC(ABC):
+
+    def __init__(self, model, num_timesteps, time_dir=+1):
+        # Init QMC variables
+        self.exp_k, self.nu, self.config = init_qmc(model, num_timesteps)
+
+        # Set up time direction and order of inner loops
+        self.time_order = np.copy(np.arange(self.config.shape[1])[::-1]).astype(np.int64)
+        self.times = np.arange(self.config.shape[1])[::time_dir]
+        self.sites = np.arange(self.config.shape[0])
+
+        # Pre-compute time flow matrices
+        self.bmats_up, self.bmats_dn = compute_timestep_mats(self.exp_k, self.nu, self.config)
+
+        # Initialize QMC statistics
+        self.status = ""
+        self.acceptance_probs = list()
+
+        # Initialization callback
+        self.initialize()
+
+    def initialize(self):
+        pass
+
+    @abstractmethod
+    def iteration(self):
+        pass
+
+    def greens(self):
+        m_up, m_dn = compute_m_matrices(self.bmats_up, self.bmats_dn, self.time_order)
+        return la.inv(m_up), la.inv(m_dn)
+
+    def get_greens(self):
+        return self.greens()
+
+    def simulate(self, warmup, measure, callback):
+        sweeps = warmup + measure
+        out = 0.
+        # Run sweeps
+        self.status = "warmup"
+        for sweep in range(sweeps):
+            self.iteration()
+            logger.info("[%s] %3d Ratio: %.2f", self.status, sweep, self.acceptance_probs[-1])
+            # perform measurements
+            if sweep > warmup:
+                self.status = "measurements"
+                gf_up, gf_dn = self.greens()
+                if callback is not None:
+                    out += callback(gf_up, gf_dn)
+                else:
+                    out += np.array([gf_up, gf_dn])
+        return out / measure
