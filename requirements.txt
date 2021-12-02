@@ -1,5 +1,6 @@
 numpy>=1.18.0
 scipy>=1.6.0
 matplotlib>=3.0.0
-numba
-hypothesis
+numba>=0.50.0
+hypothesis>=6.0.0
+lattpy>=0.6

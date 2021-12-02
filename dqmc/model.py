@@ -9,17 +9,18 @@
 # be included in all copies or substantial portions of the Software.
 
 import numpy as np
-from scipy.sparse import diags
+from scipy.sparse import diags, csr_matrix
+from lattpy import Lattice
 
 
-class HubbardModel:
+class HubbardModel(Lattice):
 
-    def __init__(self, num_sites, u=2.0, eps=0.0, hop=1.0, mu=0., beta=5.):
+    def __init__(self, vectors, u=2.0, eps=0.0, hop=1.0, mu=0., beta=5.):
+        super().__init__(vectors)
         self.u = u
         self.hop = hop
         self.eps = eps
         self.mu = mu
-        self.num_sites = num_sites
         self.beta = beta
 
     def set_beta(self, beta):
@@ -28,13 +29,21 @@ class HubbardModel:
     def set_temperature(self, temp):
         self.beta = 1 / temp
 
-    def set_num_sites(self, num_sites):
-        self.num_sites = num_sites
-
     @classmethod
     def half_filled(cls, num_sites, u=0.0, eps=0.0, hop=1.0, beta=1.):
         mu = u/2 - eps
         return cls(num_sites, u, eps, hop, mu, beta)
+
+    def hamiltonian_kinetic2(self):
+        """Builds tridiagonal kinetic Hamiltonian for 1D Hubbard chain."""
+        hop = -self.hop
+        onsite = self.eps - self.mu
+
+        dmap = self.data.map()
+        data = np.zeros(dmap.size, dtype=np.float64)
+        data[dmap.onsite()] = onsite
+        data[dmap.hopping()] = hop
+        return csr_matrix((data, dmap.indices)).toarray()
 
     def hamiltonian_kinetic(self, periodic=True):
         """Builds tridiagonal kinetic Hamiltonian for 1D Hubbard chain."""
@@ -48,3 +57,12 @@ class HubbardModel:
             ham[0, -1] = hop
             ham[-1, 0] = hop
         return ham
+
+
+def hubbard_hypercube(shape, u=0.0, eps=0.0, hop=1.0, mu=0., beta=0., periodic=None):
+    dim = 1 if isinstance(shape, int) else len(shape)
+    model = HubbardModel(np.eye(dim), u, eps, hop, mu, beta)
+    model.add_atom()
+    model.add_connections(1)
+    model.build(shape, relative=True, periodic=periodic)
+    return model
