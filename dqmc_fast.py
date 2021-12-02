@@ -18,14 +18,17 @@ logger.setLevel(logging.WARNING)
 
 class DQMC:
 
-    def __init__(self, model, num_timesteps, time_dir=+1, bmat_dir=-1):
+    def __init__(self, model, num_timesteps, time_dir=+1, bmat_dir=None):
         # Init QMC variables
         self.exp_k, self.nu, self.config = init_qmc(model, num_timesteps)
 
         # Set up time direction and order of inner loops
-        self.bmat_order = np.copy(np.arange(self.config.shape[1])[::bmat_dir]).astype(np.int64)
-        self.times = np.arange(self.config.shape[1])[::time_dir]
-        self.sites = np.arange(self.config.shape[0])
+        if bmat_dir is None:
+            # Default B-matrix direction is the reverse of the time direction
+            bmat_dir = - time_dir
+        self.bmat_order = np.arange(self.config.shape[1], dtype=np.int64)[::bmat_dir]
+        self.times = np.arange(self.config.shape[1], dtype=np.int64)[::time_dir]
+        self.sites = np.arange(self.config.shape[0], dtype=np.int64)
 
         # Pre-compute time flow matrices
         self.bmats_up, self.bmats_dn = compute_timestep_mats(self.exp_k, self.nu, self.config)
