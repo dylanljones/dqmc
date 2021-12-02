@@ -9,7 +9,7 @@
 # be included in all copies or substantial portions of the Software.
 
 from .logging import logger
-from .model import HubbardModel
+from .model import HubbardModel, hubbard_hypercube
 from .config import init_configuration, update_configuration, UP, DN, ConfigurationPlot
 from .dqmc import (
     compute_timestep_mats,

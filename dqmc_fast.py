@@ -8,7 +8,7 @@ import logging
 import numpy as np
 import matplotlib.pyplot as plt
 from dqmc.dqmc import init_qmc, compute_greens, compute_timestep_mats, iteration_fast
-from dqmc.model import HubbardModel
+from dqmc.model import hubbard_hypercube
 from dqmc import mfuncs
 from tqdm import tqdm
 
@@ -88,13 +88,14 @@ def build_temperature_array(temps, model, num_timesteps, warmup=500, measure=300
 
 
 def main():
-    num_sites = 10
-    num_timesteps = 100
+    shape = 4, 4
     u, mu, hop = 4.0, 0.0, 1.0
-    temps = np.geomspace(0.1, 100, 50)
-    model = HubbardModel(num_sites, u=u, mu=mu, hop=hop)
+    temps = np.geomspace(0.2, 100, 50)
+    num_timesteps = 50
+    warmup, measure = 500, 2000
+    model = hubbard_hypercube(shape, u=u, mu=mu, hop=hop, beta=1.0, periodic=(0, 1))
 
-    moments = build_temperature_array(temps, model, num_timesteps, warmup=500, measure=2000,
+    moments = build_temperature_array(temps, model, num_timesteps, warmup, measure,
                                       callback=mfuncs.mz_moment)
 
     fig, ax = plt.subplots()
