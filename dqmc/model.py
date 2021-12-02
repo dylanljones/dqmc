@@ -22,6 +22,15 @@ class HubbardModel:
         self.num_sites = num_sites
         self.beta = beta
 
+    def set_beta(self, beta):
+        self.beta = beta
+
+    def set_temperature(self, temp):
+        self.beta = 1 / temp
+
+    def set_num_sites(self, num_sites):
+        self.num_sites = num_sites
+
     @classmethod
     def half_filled(cls, num_sites, u=0.0, eps=0.0, hop=1.0, beta=1.):
         mu = u/2 - eps

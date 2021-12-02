@@ -25,7 +25,8 @@ import math
 import random
 import logging
 import numpy as np
-import scipy.linalg as la
+import numpy.linalg as la
+from scipy.linalg import expm
 from abc import ABC, abstractmethod
 from numba import njit, float64, int8, int64, void
 from numba import types as nt
@@ -73,8 +74,7 @@ def init_qmc(model, num_timesteps):
     # Compute factor and matrix exponential of kinetic hamiltonian
     nu = math.acosh(math.exp(model.u * dtau / 2.)) if model.u else 0
     logger.debug("nu=%s", nu)
-
-    exp_k = la.expm(dtau * ham_k)
+    exp_k = expm(dtau * ham_k)
     logger.debug("exp_k=%s", exp_k)
 
     # Initialize configuration with random -1 and +1
@@ -238,6 +238,31 @@ def compute_m_matrices(bmats_up, bmats_dn, order):
     return m_up, m_dn
 
 
+@njit(nt.Tuple((gmat_t, gmat_t))(bmat_t, bmat_t, int64[:]), cache=True)
+def compute_greens(bmats_up, bmats_dn, order):
+    r"""Computes the Green's functions for both spins.
+
+    Parameters
+    ----------
+    bmats_up : (L, N, N) np.ndarray
+        The spin-up time step matrices.
+    bmats_dn : (L, N, N) np.ndarray
+        The spin-down time step matrices.
+    order : (L, ) np.ndarray
+        The order used for multiplying the :math:'B' matrices.
+
+    Returns
+    -------
+    gf_up : np.ndarray
+        The spin-up Green's function.
+    gf_dn : np.ndarray
+        The spin-down Green's function.
+    """
+    m_up, m_dn = compute_m_matrices(bmats_up, bmats_dn, order)
+    gf_up = la.inv(m_up)
+    gf_dn = la.inv(m_dn)
+    return np.ascontiguousarray(gf_up), np.ascontiguousarray(gf_dn)
+
 # =========================================================================
 # Determinant implementation
 # =========================================================================
@@ -284,8 +309,8 @@ def iteration_det(exp_k, nu, config, bmats_up, bmats_dn, old_det, times):
             update_timestep_mats(exp_k, nu, config, bmats_up, bmats_dn, t)
             # Compute determinant product of the new configuration
             m_up, m_dn = compute_m_matrices(bmats_up, bmats_dn, times)
-            det_up = np.linalg.det(m_up)
-            det_dn = np.linalg.det(m_dn)
+            det_up = la.det(m_up)
+            det_dn = la.det(m_dn)
             new_det = det_up * det_dn
             # Compute acceptance ratio
             d = min(abs(new_det / old_det), 1.0)
@@ -377,6 +402,7 @@ def update_greens(nu, config, gf_up, gf_dn, i, t):
     gf_dn : np.ndarray
         The spin-down Green's function.
     """
+    # ToDo: Check if implementation is right
     # Compute alphas
     arg = -2 * nu * config[i, t]
     alpha_up = np.expm1(UP * arg)
@@ -414,13 +440,15 @@ def wrap_greens(bmats_up, bmats_dn, gf_up, gf_dn, t):
     """
     b_up = bmats_up[t]
     b_dn = bmats_dn[t]
-    gf_up[:] = np.dot(np.dot(b_up, gf_up), np.linalg.inv(b_up))
-    gf_dn[:] = np.dot(np.dot(b_dn, gf_dn), np.linalg.inv(b_dn))
+    gf_up[:] = np.dot(np.dot(b_up, gf_up), la.inv(b_up))
+    gf_dn[:] = np.dot(np.dot(b_dn, gf_dn), la.inv(b_dn))
 
 
 @njit(int64(expk_t, float64, conf_t, bmat_t, bmat_t, gmat_t, gmat_t, int64[:]), cache=True)
 def iteration_fast(exp_k, nu, config, bmats_up, bmats_dn, gf_up, gf_dn, times):
     r"""Runs one iteration of the rank-1 DQMC-scheme.
+
+    Todo: Update Green's function before or after config-flip?
 
     Parameters
     ----------
@@ -450,8 +478,6 @@ def iteration_fast(exp_k, nu, config, bmats_up, bmats_dn, gf_up, gf_dn, times):
     accepted : int
         The number of accepted spin flips.
     """
-    # Todo: UpdateGreen's before or after config-flip?
-
     accepted = 0
     sites = np.arange(config.shape[0])
     # Iterate over all time-steps
@@ -466,11 +492,11 @@ def iteration_fast(exp_k, nu, config, bmats_up, bmats_dn, gf_up, gf_dn, times):
             if accept:
                 # Move accepted
                 accepted += 1
+                # Update configuration and corresponding B-matrices
                 config[i, t] = - config[i, t]
+                update_timestep_mats(exp_k, nu, config, bmats_up, bmats_dn, t)
                 # Update Green's functions
                 update_greens(nu, config, gf_up, gf_dn, i, t)
-                # Update configuration and corresponding B-matrices
-                update_timestep_mats(exp_k, nu, config, bmats_up, bmats_dn, t)
         # Wrap Green's function between time steps
         wrap_greens(bmats_up, bmats_dn, gf_up, gf_dn, t)
     return accepted
@@ -510,8 +536,7 @@ class BaseDQMC(ABC):
         pass
 
     def greens(self):
-        m_up, m_dn = compute_m_matrices(self.bmats_up, self.bmats_dn, self.time_order)
-        return la.inv(m_up), la.inv(m_dn)
+        return compute_greens(self.bmats_up, self.bmats_dn, self.time_order)
 
     def get_greens(self):
         return self.greens()
@@ -527,7 +552,7 @@ class BaseDQMC(ABC):
             # perform measurements
             if sweep > warmup:
                 self.status = "measurements"
-                gf_up, gf_dn = self.greens()
+                gf_up, gf_dn = self.get_greens()
                 if callback is not None:
                     out += callback(gf_up, gf_dn)
                 else:
