@@ -75,10 +75,14 @@ def init_qmc(model, num_timesteps):
     nu = math.acosh(math.exp(model.u * dtau / 2.)) if model.u else 0
     logger.debug("nu=%s", nu)
     exp_k = expm(dtau * ham_k)
-    logger.debug("exp_k=%s", exp_k)
+    logger.debug("min(e^k)=%s", np.min(exp_k))
+    logger.debug("max(e^k)=%s", np.max(exp_k))
 
     # Initialize configuration with random -1 and +1
     config = init_configuration(model.num_sites, num_timesteps)
+    prop_pos = len(np.where(config == +1)[0]) / len(config)
+    prop_neg = len(np.where(config == -1)[0]) / len(config)
+    logger.debug("config: p+=%s p-=%s", prop_pos, prop_neg)
 
     return exp_k, nu, config
 
@@ -419,6 +423,56 @@ def update_greens(nu, config, gf_up, gf_dn, i, t):
     # Compute outer product of b and c and update GF for all j and k
     gf_up -= np.outer(b_up, c_up)
     gf_dn -= np.outer(b_dn, c_dn)
+
+
+@njit(void(float64, conf_t, gmat_t, gmat_t, int64, int64), cache=True)
+def update_greens2(nu, config, gf_up, gf_dn, k, t):
+    r"""Updates the Green's function after accepting a spin-flip.
+
+    Notes
+    -----
+    The update of the Green's function after the spin at
+    site i and time t has been flipped  is defined as
+    ..math::
+        α_σ = e^{-2 σ ν s(i, t)} - 1
+        c_{j,σ} = -α_σ G_{ji,σ} + δ_{ji} α_σ
+        b_{k,σ} = G_{ki,σ} / (1 + c_{i,σ})
+        G_{jk,σ} = G_{jk,σ} - b_{j,σ}c_{k,σ}
+
+    Parameters
+    ----------
+    nu : float
+        The parameter ν defined by :math:'\cosh(ν) = e^{U Δτ / 2}'
+    config : (N, L) np.ndarray
+        The configuration or Hubbard-Stratonovich field.
+    k : int
+        The site index :math:'i' of the proposed spin-flip.
+    t : int
+        The time-step index :math:'t' of the proposed spin-flip.
+    gf_up : np.ndarray
+        The spin-up Green's function.
+    gf_dn : np.ndarray
+        The spin-down Green's function.
+    """
+    # Compute alphas
+    arg = -2 * nu * config[k, t]
+    alpha_up = np.expm1(UP * arg)
+    alpha_dn = np.expm1(DN * arg)
+    d_up = 1 + alpha_up * (1 - gf_up[k, k])
+    d_dn = 1 + alpha_dn * (1 - gf_dn[k, k])
+    frac_up = alpha_up / d_up
+    frac_dn = alpha_dn / d_dn
+
+    num_sites = config.shape[0]
+
+    gfu, gfd = np.copy(gf_up), np.copy(gf_dn)
+    for i in range(num_sites):
+        idel = 0
+        if i == k:
+            idel = 1
+        for j in range(num_sites):
+            gf_up[i, j] = gfu[i, j] + frac_up * (gfu[i, k] - idel) * gfu[k, j]
+            gf_dn[i, j] = gfd[i, j] + frac_dn * (gfd[i, k] - idel) * gfd[k, j]
 
 
 @njit(void(bmat_t, bmat_t, gmat_t, gmat_t, int64), cache=True)
