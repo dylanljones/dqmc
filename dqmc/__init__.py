@@ -10,7 +10,7 @@
 
 from .logging import logger
 from .model import HubbardModel, hubbard_hypercube
-from .config import init_configuration, update_configuration, UP, DN, ConfigurationPlot
+from .config import init_configuration, UP, DN, ConfigurationPlot
 from .dqmc import (
     compute_timestep_mats,
     update_timestep_mats,

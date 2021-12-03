@@ -10,7 +10,6 @@
 
 import numpy as np
 import matplotlib.pyplot as plt
-from numba import njit
 
 UP, DN = +1, -1
 
@@ -31,22 +30,6 @@ def init_configuration(num_sites: int, num_timesteps: int) -> np.ndarray:
         The array representing the configuration or or Hubbard-Stratonovich field.
     """
     return 2 * np.random.randint(0, 2, size=(num_sites, num_timesteps), dtype=np.int8) - 1
-
-
-@njit
-def update_configuration(config: np.ndarray, i: int, t: int) -> None:
-    """Updates an element of the HS-field by flipping it's spin-value.
-
-    Parameters
-    ----------
-    config : (N, L) np.ndarray
-        The configuration or Hubbard-Stratonovich field.
-    i : int
-        The index of the lattice site to update.
-    t : int, optional
-        The index of the time slice to update.
-    """
-    config[i, t] = -config[i, t]
 
 
 class ConfigurationPlot:
