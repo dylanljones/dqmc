@@ -34,7 +34,7 @@ class HubbardModel(Lattice):
         mu = u/2 - eps
         return cls(num_sites, u, eps, hop, mu, beta)
 
-    def hamiltonian_kinetic2(self):
+    def hamiltonian_kinetic(self):
         """Builds tridiagonal kinetic Hamiltonian for 1D Hubbard chain."""
         hop = -self.hop
         onsite = self.eps - self.mu
@@ -45,22 +45,12 @@ class HubbardModel(Lattice):
         data[dmap.hopping()] = hop
         return csr_matrix((data, dmap.indices)).toarray()
 
-    def hamiltonian_kinetic(self, periodic=True):
-        """Builds tridiagonal kinetic Hamiltonian for 1D Hubbard chain."""
-        hop = -self.hop
-        diag = (self.eps - self.mu) * np.ones(self.num_sites)
-        offdiag = hop * np.ones(self.num_sites - 1)
-        arrs = [offdiag, diag, offdiag]
-        offset = [-1, 0, +1]
-        ham = diags(arrs, offset).toarray()
-        if periodic:
-            ham[0, -1] = hop
-            ham[-1, 0] = hop
-        return ham
-
 
 def hubbard_hypercube(shape, u=0.0, eps=0.0, hop=1.0, mu=0., beta=0., periodic=None):
     dim = 1 if isinstance(shape, int) else len(shape)
+    if isinstance(periodic, bool) and periodic:
+        periodic = np.arange(dim)
+
     model = HubbardModel(np.eye(dim), u, eps, hop, mu, beta)
     model.add_atom()
     model.add_connections(1)

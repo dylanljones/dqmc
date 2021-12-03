@@ -27,7 +27,6 @@ import logging
 import numpy as np
 import numpy.linalg as la
 from scipy.linalg import expm
-from abc import ABC, abstractmethod
 from numba import njit, float64, int8, int64, void
 from numba import types as nt
 from .model import HubbardModel
@@ -69,7 +68,7 @@ def init_qmc(model, num_timesteps):
     if check > 0.1:
         logger.warning("Increase number of time steps: Check-value %.2f should be <0.1!", check)
     else:
-        logger.debug("Check-value %.2f is <0.1!", check)
+        logger.debug("Check-value %.4f is <0.1!", check)
 
     # Compute factor and matrix exponential of kinetic hamiltonian
     nu = math.acosh(math.exp(model.u * dtau / 2.)) if model.u else 0
@@ -80,8 +79,8 @@ def init_qmc(model, num_timesteps):
 
     # Initialize configuration with random -1 and +1
     config = init_configuration(model.num_sites, num_timesteps)
-    prop_pos = len(np.where(config == +1)[0]) / len(config)
-    prop_neg = len(np.where(config == -1)[0]) / len(config)
+    prop_pos = len(np.where(config == +1)[0]) / config.size
+    prop_neg = len(np.where(config == -1)[0]) / config.size
     logger.debug("config: p+=%s p-=%s", prop_pos, prop_neg)
 
     return exp_k, nu, config
@@ -266,6 +265,32 @@ def compute_greens(bmats_up, bmats_dn, order):
     gf_up = la.inv(m_up)
     gf_dn = la.inv(m_dn)
     return np.ascontiguousarray(gf_up), np.ascontiguousarray(gf_dn)
+
+
+@njit(void(expk_t, float64, conf_t, bmat_t, bmat_t, int64, int64), cache=True)
+def update(exp_k, nu, config, bmats_up, bmats_dn, i, t):
+    r"""Updates the configuration and the corresponding time-step matrices.
+
+    Parameters
+    ----------
+    exp_k : np.ndarray
+        The matrix exponential of the kinetic hamiltonian.
+    nu : float
+        The parameter ν defined by :math:'\cosh(ν) = e^{U Δτ / 2}'
+    config : (N, L) np.ndarray
+        The configuration or Hubbard-Stratonovich field.
+    bmats_up : (L, N, N) np.ndarray
+        The spin-up time step matrices.
+    bmats_dn : (L, N, N) np.ndarray
+        The spin-down time step matrices.
+    i : int
+        The site index :math:'i' of the proposed spin-flip.
+    t : int
+        The time-step index :math:'t' of the proposed spin-flip.
+    """
+    config[i, t] = -config[i, t]
+    update_timestep_mats(exp_k, nu, config, bmats_up, bmats_dn, t)
+
 
 # =========================================================================
 # Determinant implementation
@@ -554,63 +579,3 @@ def iteration_fast(exp_k, nu, config, bmats_up, bmats_dn, gf_up, gf_dn, times):
         # Wrap Green's function between time steps
         wrap_greens(bmats_up, bmats_dn, gf_up, gf_dn, t)
     return accepted
-
-
-# =========================================================================
-# Base DQMC class
-# =========================================================================
-
-
-class BaseDQMC(ABC):
-
-    def __init__(self, model, num_timesteps, time_dir=+1, bmat_dir=None):
-        # Init QMC variables
-        self.exp_k, self.nu, self.config = init_qmc(model, num_timesteps)
-
-        # Set up time direction and order of inner loops
-        if bmat_dir is None:
-            bmat_dir = - time_dir
-        self.time_order = np.arange(self.config.shape[1], dtype=np.int64)[::bmat_dir]
-        self.times = np.arange(self.config.shape[1], dtype=np.int64)[::time_dir]
-        self.sites = np.arange(self.config.shape[0], dtype=np.int64)
-
-        # Pre-compute time flow matrices
-        self.bmats_up, self.bmats_dn = compute_timestep_mats(self.exp_k, self.nu, self.config)
-
-        # Initialize QMC statistics
-        self.status = ""
-        self.acceptance_probs = list()
-
-        # Initialization callback
-        self.initialize()
-
-    def initialize(self):
-        pass
-
-    @abstractmethod
-    def iteration(self):
-        pass
-
-    def greens(self):
-        return compute_greens(self.bmats_up, self.bmats_dn, self.time_order)
-
-    def get_greens(self):
-        return self.greens()
-
-    def simulate(self, warmup, measure, callback):
-        sweeps = warmup + measure
-        out = 0.
-        # Run sweeps
-        self.status = "warmup"
-        for sweep in range(sweeps):
-            self.iteration()
-            logger.info("[%s] %3d Ratio: %.2f", self.status, sweep, self.acceptance_probs[-1])
-            # perform measurements
-            if sweep > warmup:
-                self.status = "measurements"
-                gf_up, gf_dn = self.get_greens()
-                if callback is not None:
-                    out += callback(gf_up, gf_dn)
-                else:
-                    out += np.array([gf_up, gf_dn])
-        return out / measure

@@ -18,5 +18,5 @@ from .dqmc import (
     compute_greens,
     iteration_det,
     iteration_fast,
-    BaseDQMC
 )
+from .simulator import BaseDQMC, DQMC
