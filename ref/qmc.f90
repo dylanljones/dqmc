@@ -1,5 +1,5 @@
 !========+=========+=========+=========+=========+=========+=========+=$
-! PROGRAM: lisaqmc.f  
+! PROGRAM: lisaqmc.f
 ! NOTICE : This program accompanies the revue article:
 !
 !           The Local Impurity Self Consistent Approximation (LISA)
@@ -16,30 +16,30 @@
 !          you are kindly asked to cite the paper (and, if applicable,
 !              the original works) if you use this program.
 !
-!          The programs have  been thoroughly tested on SUN Sparks, 
+!          The programs have  been thoroughly tested on SUN Sparks,
 !          HP 900, IBM RS6000 stations.
 !
-! TYPE   : main 
+! TYPE   : main
 ! PURPOSE: program for qmc-simulation of Anderson impurity
 !          problem
 ! I/O    : cf file README_lisaqmc
-! VERSION: 28-07-03  Xmu added 
+! VERSION: 28-07-03  Xmu added
 ! AUTHOR : W. Krauth (krauth@physique.ens.fr)
-! COMMENT: Even though FORTRAN is case-insensitive, I have capitalized 
-!          all the global variables, i. e. the variables appearing 
+! COMMENT: Even though FORTRAN is case-insensitive, I have capitalized
+!          all the global variables, i. e. the variables appearing
 !          in the common/global/ block (cf file lisaqmc.dat).
 !          At the end of the program, a number of SLATEC routines
 !          have been appended. You may not want to  print these.
 !========+=========+=========+=========+=========+=========+=========+=$
       subroutine qmc(maxt,nwarm)
-      include 'param.dat' 
+      include 'param.dat'
       real ranw
       logical stochastic
       dimension greenm(-L+1:L-1),greenm2(-L+1:L-1),greenupsum(0:L-1)
       dimension greendosum(0:L-1)
       dimension chipm(-L+1:L-1)
       integer itau(0:L+1),iss(L)
-      nran(i)=mod(int(i*ranw(Idum)),i) + 1 
+      nran(i)=mod(int(i*ranw(Idum)),i) + 1
 !     Zero=0
 !     One=1
 !     Two=2
@@ -47,10 +47,10 @@
       if (L.le.30) stochastic=.false.
 !     if (L.le.16) stochastic=.false.
 !     open (unit=1,file='lisaqmc.input',form='formatted',status='old')
-!c     
-!c    write header onto standard output 
 !c
-!     call wheader(6) 
+!c    write header onto standard output
+!c
+!     call wheader(6)
 !======================================================================
 !     initial set-up
 !======================================================================
@@ -75,11 +75,11 @@
          Paramagnet=.true.
       else
          Paramagnet=.false.
-      end if    
+      end if
 !     open (unit=14,file='lisaqmc.init',form='formatted',status='old')
 !     print*,' begin initi paa', paramagnet
 !--------  Change Green0t(L) to Green(L,L') !
-      call initial(xmud) 
+      call initial(xmud)
 !     print*,' end init'
 !      do i=1,L
 !            write(*,'(8f10.5)')(green0up(i,j),j=1,8)
@@ -104,19 +104,19 @@
       iitime=0
       iter=0
 !***********************************************************************
-!		start simulation  
+!		start simulation
 !***********************************************************************
 !c
 !c    SIMULATION BY MONTE CARLO   (stochastic.eq.true)
 !c
-      if (stochastic) then 
+      if (stochastic) then
          nfastup=100
          do 1000 iii=1,1000000000
 !c
 !c       we make nfastup sweeps with the fast update (eq. (\ref{fastupdate}))
-!c       until checking with subroutine 'update' (eq. 
-!c       whether precision hasn't 
-!c       deteriorated. If that is the case, we make nfastup smaller, 
+!c       until checking with subroutine 'update' (eq.
+!c       whether precision hasn't
+!c       deteriorated. If that is the case, we make nfastup smaller,
 !c       otherwise bigger.
 !c
          do 2000 kkk=1,nfastup
@@ -135,11 +135,11 @@
             dummy=abs(detrat(k))
             if (ranw(Idum).lt.dummy/(One+dummy)) then
 !c
-!c             accept flip, 
+!c             accept flip,
 !c
                call record(k)
                naccept=naccept+1
-            end if 
+            end if
 1900        continue
 !c
 !c          end of sweep: calculation of green's function
@@ -152,13 +152,13 @@
                greenm2(idel)=Zero
                inumb=min(L-idel,L)-max(1,1-idel)+1
                do 193 i=max(1,1-idel),min(L-idel,L)
-                  dummy=inumb	
+                  dummy=inumb
                   greenm(idel)=greenm(idel)+greenup(i+idel,i)/dummy
                   greenm2(idel)=greenm2(idel)+greendo(i+idel,i)/dummy
 !------------ Calculate Chipm=<S+(t)S-(0)>
 !         chipm(idel)=chipm(idel)-(greenup(idel+i,i)*greendo(i,idel+i)+  ! susceptibility
 !     &   greendo(idel+i,i)*greenup(i,idel+i))/Two/dummy
-193            continue 
+193            continue
 192         continue
             do 191 i=1,L
                dummy=L
@@ -220,7 +220,7 @@
             greenupsum(i)=greenup(i+1,1)
    	    greendosum(i)=greendo(i+1,1)
 !------------- Start susceptibility Xi-pm
-!          chipm(i)=-(greenup(i+1,1)*greendo(1,i+1)+   ! susceptibility 
+!          chipm(i)=-(greenup(i+1,1)*greendo(1,i+1)+   ! susceptibility
 !     &   greendo(i+1,1)*greenup(1,i+1))/Two
 910      continue
          dsum=greenup(1,1)*greendo(1,1)
@@ -229,7 +229,7 @@
          det=One
 !c
 !c       Note that det=One gives the determinant of the initial configuration
-!c       only up to a multiplicative factor. If you are interested in the 
+!c       only up to a multiplicative factor. If you are interested in the
 !c       numerical value of the partition function, or the free energy,
 !c       you will have to replace the above line by  the following:
 !c
@@ -240,7 +240,7 @@
 !c
          partition=det
          itup=0
-      if (stochastic) then 
+      if (stochastic) then
          nexact=1
       else
          nexact=2**L-1
@@ -308,7 +308,7 @@
 !====================================================================
 !                      END OF SIMULATION
 !====================================================================
-      if (stochastic) then 
+      if (stochastic) then
          facnorm=iitime
       else
          facnorm=partition
@@ -319,12 +319,12 @@
 !        do 717 i=0,L-1
 !        write(17,'(f20.10)')(greenupsum(i)+greendosum(i))/facnorm/Two
 717      continue
-!     else 
+!     else
 !        do 718 i=0,L-1
 !           write(17,'(2f20.10)')greenupsum(i)/facnorm,
 !    &      greendosum(i)/facnorm
 718   continue
-!     end if 
+!     end if
 !c----------Susceptibility
 !        rewind(3)
 !         do  i=0,L-1
@@ -336,7 +336,7 @@
          do  i=0,L-1
             Greentup(i+1)=-greenupsum(i)/facnorm
             Greentdo(i+1)=-greendosum(i)/facnorm
-!            Chit(i+1)=chipm(i)  ! susceptibility 
+!            Chit(i+1)=chipm(i)  ! susceptibility
 !     write(2,'(i5,2f15.8)')i,Greentup(i+1),Greentdo(i+1)
          enddo
       write(*,'(a20,f15.7)')' prob double occ=',dsum/facnorm
@@ -369,11 +369,11 @@
 !     write(15,'(I10)')int(-ranw(Idum)*100000)
       end
 !========+=========+=========+=========+=========+=========+=========+=$
-!     PROGRAM: detrat.f  
+!     PROGRAM: detrat.f
 !     TYPE   : function
 !     PURPOSE: calculate the ratio of the new and
 !              old determinants (cf. eq. (\ref{detrat})
-!     I/O    : 
+!     I/O    :
 !     VERSION: 30-Sep-95
 !     COMMENT:
 !========+=========+=========+=========+=========+=========+=========+=$
@@ -384,16 +384,16 @@
       detrat=rup*rdo
       end
 !========+=========+=========+=========+=========+=========+=========+=$
-!     PROGRAM: initial.f  
-!     TYPE   : subroutine 
+!     PROGRAM: initial.f
+!     TYPE   : subroutine
 !     PURPOSE: read in initial configuration of bath Green's function
-!              and of Ising spins, expand G(i-j) into matrix G(i,j). 
-!              invoke subroutine Update to calculate 
+!              and of Ising spins, expand G(i-j) into matrix G(i,j).
+!              invoke subroutine Update to calculate
 !              Green's function for the initial choice of
 !              Ising spins.
-!     I/O    : 
-!     VERSION: 28-07-03  Xmu added 
-!     COMMENT:  
+!     I/O    :
+!     VERSION: 28-07-03  Xmu added
+!     COMMENT:
 !========+=========+=========+=========+=========+=========+=========+=$
       subroutine initial(xmud)
       include 'param.dat'
@@ -421,7 +421,7 @@
           gtempdo(i)=-Green0tdo(i+1)
 172      continue
 !c
-!c    reflection of G to calculate Greens function for neg. arguments	
+!c    reflection of G to calculate Greens function for neg. arguments
 !c
       do 123 i=1,L-1
          gtempup(-i)=-gtempup(L-i)
@@ -472,12 +472,12 @@
 !     VERSION: 30-Sep-95
 !     COMMENT: cf. D. E. Knuth, Seminumerical Algorithms, 2nd edition
 !              Vol 2 of  The Art of Computer Programming (Addison-Wesley,
-!              1981) pp 26f. (Note: the procedure ran3 in 
+!              1981) pp 26f. (Note: the procedure ran3 in
 !              W. H. Press et al,  Numerical
 !              Recipes in FORTRAN, 2nd edition (Cambridge University
-!              Press 1992)  is based on the same algorithm). 
-!              I would suggest that you make sure for yourself that 
-!              the quality of the random number generator is sufficient, 
+!              Press 1992)  is based on the same algorithm).
+!              I would suggest that you make sure for yourself that
+!              the quality of the random number generator is sufficient,
 !              or else replace it!
 !========+=========+=========+=========+=========+=========+=========+=$
       real function ranw(idum)
@@ -490,7 +490,7 @@
 !c
 !c       fill up the vector ix with some random integers, which are
 !c       not all even
-!c       
+!c
          if (idum.eq.0) stop 'use nonzero value of idum'
          idum=abs(mod(idum,Mbig))
          ibit=0
@@ -502,14 +502,14 @@
          j=24
          k=55
 !c
-!c       warm up the generator     
+!c       warm up the generator
 !c
          do i=1,1258
             Ix(k)=mod(Ix(k)+Ix(j),Mbig)
             j=j-1
-            if (j.eq.0) j=55 
+            if (j.eq.0) j=55
             k=k-1
-            if (k.eq.0) k=55 
+            if (k.eq.0) k=55
          end do
       end if
 !c
@@ -517,17 +517,17 @@
 !c
       Ix(k)=mod(Ix(k)+Ix(j),Mbig)
       j=j-1
-      if (j.eq.0) j=55 
+      if (j.eq.0) j=55
       k=k-1
-      if (k.eq.0) k=55 
-      ranw=Ix(k)*Xinvers 
+      if (k.eq.0) k=55
+      ranw=Ix(k)*Xinvers
       end
 !========+=========+=========+=========+=========+=========+=========+=$
-!       PROGRAM: record  
-!       TYPE   : subroutine 
+!       PROGRAM: record
+!       TYPE   : subroutine
 !       PURPOSE: record changes of accepted move on the Green's function
 !                (cf  eq. (\ref{fastupdate}))
-!       I/O    : 
+!       I/O    :
 !       VERSION: 30-9-95
 !       COMMENT: k is the index of the spin which has been flipped
 !========+=========+=========+=========+=========+=========+=========+=$
@@ -548,25 +548,25 @@
            do 2 i=1,L
               Greenup(i,j)=Gnewup(i,j)
               Greendo(i,j)=Gnewdo(i,j)
-2       continue  
+2       continue
 !c
 !c   update spin
 !c
         Is(k)=-Is(k)
-        end 
+        end
 
 !========+=========+=========+=========+=========+=========+=========+=$
-!     PROGRAM: update.f  
-!     TYPE   : subroutine 
-!     PURPOSE: calculate the Green's function 
-!              for a given configuration of spins 
+!     PROGRAM: update.f
+!     TYPE   : subroutine
+!     PURPOSE: calculate the Green's function
+!              for a given configuration of spins
 !              (in vector Is) from the Green's function
 !              for spins set equal to zero  (eq. (\ref{inversion}))
-!     I/O    : 
+!     I/O    :
 !     VERSION: 30-Sep-95
 !     COMMENT: can be used to initialize run
 !                     (subroutine initial),
-!              or to check for deterioration of precision 
+!              or to check for deterioration of precision
 !========+=========+=========+=========+=========+=========+=========+=$
       subroutine update(xmud)
       include 'param.dat'
@@ -607,8 +607,8 @@
 !          These routines can be obtained, e.g., from netlib
 !          (to learn about netlib, send an otherwise empty
 !          message to netlib@research.att.com
-!          containing 'send index' in the subject header, 
-!          on WWW, look under the address 
+!          containing 'send index' in the subject header,
+!          on WWW, look under the address
 !          http://netlib.att.com/netlib/master/readme.html).
 !========+=========+=========+=========+=========+=========+=========+=$
       Subroutine inverse(a,y)
@@ -628,27 +628,27 @@
       call dgedi(y,L,L,ipvt,det,z,job)
       end
 !======================================================================
-!       PROGRAM: rheader.f  
+!       PROGRAM: rheader.f
 !       TYPE   : subroutine
-!       PURPOSE: read the program's header from unit k 
+!       PURPOSE: read the program's header from unit k
 !       I/O    :
 !       VERSION: 30-Sep-95
-!       COMMENT: 
+!       COMMENT:
 !========+=========+=========+=========+=========+=========+=========+=$
-        subroutine rheader(k) 
+        subroutine rheader(k)
         do 1 i=1,10
         read(k,*)
 1       continue
-        end 
+        end
 !========+=========+=========+=========+=========+=========+=========+=$
-!       PROGRAM: wheader.f  
+!       PROGRAM: wheader.f
 !       TYPE   : subroutine
-!       PURPOSE: write the program's header onto standard output 
-!       I/O    : 
+!       PURPOSE: write the program's header onto standard output
+!       I/O    :
 !       VERSION: 30-Sep-95
-!       COMMENT: 
+!       COMMENT:
 !========+=========+=========+=========+=========+=========+=========+=$
-        subroutine wheader(k) 
+        subroutine wheader(k)
         include 'param.dat'
         character *80 xyz
         write(k,'(a55)')'========================================'
@@ -662,26 +662,26 @@
         do 3 i=1,6
         read(1,'(a60)')xyz
         write(k,'(a60)')xyz
-3       continue 
+3       continue
         rewind(1)
         end
 !========+=========+=========+=========+=========+=========+=========+=$
-!       PROGRAM: dasum.f daxpy.f  ddot.f dgeco.f dgedi.f dgefa.f 
+!       PROGRAM: dasum.f daxpy.f  ddot.f dgeco.f dgedi.f dgefa.f
 !                dscal.f dswap.f idamax.f
-!       TYPE   : collection of subroutines 
-!       PURPOSE: calculate inverse and determinant (look at 
-!                subroutine dgedi.f) 
+!       TYPE   : collection of subroutines
+!       PURPOSE: calculate inverse and determinant (look at
+!                subroutine dgedi.f)
 !       I/O    :
 !       VERSION: 30-Sep-95
 !       COMMENT: the following subroutines are a bunch of
 !                functions obtained from the slatec library
-!                at Netlib, which allow the calculation of 
+!                at Netlib, which allow the calculation of
 !                inverse and determinant.
-!                You can replace these programs by the 
+!                You can replace these programs by the
 !                corresponding routines of your favorite library,
 !                e.g. Numerical Recipes (which is not in the
 !                public domain).
-!                Notice that we are using the double precision 
+!                Notice that we are using the double precision
 !                versions of the programs.
 !noprint=+=========+=========+=========+=========+=========+=========+=$
 *DECK DASUM
