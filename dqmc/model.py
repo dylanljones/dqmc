@@ -9,13 +9,12 @@
 # be included in all copies or substantial portions of the Software.
 
 import numpy as np
-from scipy.sparse import diags, csr_matrix
+from scipy.sparse import csr_matrix
 from lattpy import Lattice
 
 
 class HubbardModel(Lattice):
-
-    def __init__(self, vectors, u=2.0, eps=0.0, hop=1.0, mu=0., beta=5.):
+    def __init__(self, vectors, u=2.0, eps=0.0, hop=1.0, mu=0.0, beta=5.0):
         super().__init__(vectors)
         self.u = u
         self.hop = hop
@@ -30,8 +29,8 @@ class HubbardModel(Lattice):
         self.beta = 1 / temp
 
     @classmethod
-    def half_filled(cls, num_sites, u=0.0, eps=0.0, hop=1.0, beta=1.):
-        mu = u/2 - eps
+    def half_filled(cls, num_sites, u=0.0, eps=0.0, hop=1.0, beta=1.0):
+        mu = u / 2 - eps
         return cls(num_sites, u, eps, hop, mu, beta)
 
     def hamiltonian_kinetic(self):
@@ -46,7 +45,7 @@ class HubbardModel(Lattice):
         return csr_matrix((data, dmap.indices)).toarray()
 
 
-def hubbard_hypercube(shape, u=0.0, eps=0.0, hop=1.0, mu=0., beta=0., periodic=None):
+def hubbard_hypercube(shape, u=0.0, eps=0.0, hop=1.0, mu=0.0, beta=0.0, periodic=None):
     dim = 1 if isinstance(shape, int) else len(shape)
     if isinstance(periodic, bool) and periodic:
         periodic = np.arange(dim)

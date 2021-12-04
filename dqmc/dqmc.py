@@ -66,12 +66,14 @@ def init_qmc(model, num_timesteps):
     dtau = model.beta / num_timesteps
     check = model.u * model.hop * dtau ** 2
     if check > 0.1:
-        logger.warning("Increase number of time steps: Check-value %.2f should be <0.1!", check)
+        logger.warning(
+            "Increase number of time steps: Check-value %.2f should be <0.1!", check
+        )
     else:
         logger.debug("Check-value %.4f is <0.1!", check)
 
     # Compute factor and matrix exponential of kinetic hamiltonian
-    nu = math.acosh(math.exp(model.u * dtau / 2.)) if model.u else 0
+    nu = math.acosh(math.exp(model.u * dtau / 2.0)) if model.u else 0
     logger.debug("nu=%s", nu)
     exp_k = expm(dtau * ham_k)
     logger.debug("min(e^k)=%s", np.min(exp_k))
@@ -101,8 +103,9 @@ def compute_timestep_mat(exp_k, nu, config, t, sigma):
     ..math::
         B_σ(h_t) = e^k e^{σ ν V_t(h_t)}
 
-    Simply multiplying the matrix exponential of the kinetic Hamiltonian with the diagonal
-    elements of the second matrix yields the same result as using `np.dot` with `np.diag`.
+    Simply multiplying the matrix exponential of the kinetic Hamiltonian
+    with the diagonal elements of the second matrix yields the same result
+    as using `np.dot` with `np.diag`.
 
     Parameters
     ----------
@@ -127,7 +130,7 @@ def compute_timestep_mat(exp_k, nu, config, t, sigma):
 
 @njit(nt.UniTuple(bmat_t, 2)(expk_t, float64, conf_t), cache=True)
 def compute_timestep_mats(exp_k, nu, config):
-    r"""Computes the time step matrices :math:'B_σ(h_t)' for all times `t` and both spins.
+    r"""Computes the time step matrices :math:'B_σ(h_t)' for all times and both spins.
 
     Notes
     -----
@@ -297,8 +300,12 @@ def update(exp_k, nu, config, bmats_up, bmats_dn, i, t):
 # =========================================================================
 
 
-@njit(nt.Tuple((float64, int64))(expk_t, float64, conf_t, bmat_t, bmat_t, float64, int64[:]),
-      cache=True)
+@njit(
+    nt.Tuple((float64, int64))(
+        expk_t, float64, conf_t, bmat_t, bmat_t, float64, int64[:]
+    ),
+    cache=True,
+)
 def iteration_det(exp_k, nu, config, bmats_up, bmats_dn, old_det, times):
     r"""Runs one iteration of the determinant DQMC-scheme.
 
@@ -399,7 +406,7 @@ def compute_acceptance_fast(nu, config, gf_up, gf_dn, i, t):
     alpha_dn = np.expm1(DN * arg)
     d_up = 1 + alpha_up * (1 - gf_up[i, i])
     d_dn = 1 + alpha_dn * (1 - gf_dn[i, i])
-    return min(abs(d_up * d_dn), 1.)
+    return min(abs(d_up * d_dn), 1.0)
 
 
 @njit(void(float64, conf_t, gmat_t, gmat_t, int64, int64), cache=True)
@@ -523,7 +530,9 @@ def wrap_greens(bmats_up, bmats_dn, gf_up, gf_dn, t):
     gf_dn[:] = np.dot(np.dot(b_dn, gf_dn), la.inv(b_dn))
 
 
-@njit(int64(expk_t, float64, conf_t, bmat_t, bmat_t, gmat_t, gmat_t, int64[:]), cache=True)
+@njit(
+    int64(expk_t, float64, conf_t, bmat_t, bmat_t, gmat_t, gmat_t, int64[:]), cache=True
+)
 def iteration_fast(exp_k, nu, config, bmats_up, bmats_dn, gf_up, gf_dn, times):
     r"""Runs one iteration of the rank-1 DQMC-scheme.
 
@@ -572,7 +581,7 @@ def iteration_fast(exp_k, nu, config, bmats_up, bmats_dn, gf_up, gf_dn, times):
                 # Move accepted
                 accepted += 1
                 # Update configuration and corresponding B-matrices
-                config[i, t] = - config[i, t]
+                config[i, t] = -config[i, t]
                 update_timestep_mats(exp_k, nu, config, bmats_up, bmats_dn, t)
                 # Update Green's functions
                 update_greens(nu, config, gf_up, gf_dn, i, t)

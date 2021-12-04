@@ -10,12 +10,7 @@
 
 """Main DQMC simulator object, see `dqmc` for implementation of the DQMC methods."""
 
-import math
-import random
-import logging
 import numpy as np
-import numpy.linalg as la
-from scipy.linalg import expm
 import logging
 from abc import ABC, abstractmethod
 from .dqmc import init_qmc, compute_timestep_mats, compute_greens, iteration_fast
@@ -24,20 +19,21 @@ logger = logging.getLogger("dqmc")
 
 
 class BaseDQMC(ABC):
-
     def __init__(self, model, num_timesteps, time_dir=+1, bmat_dir=None):
         # Init QMC variables
         self.exp_k, self.nu, self.config = init_qmc(model, num_timesteps)
 
         # Set up time direction and order of inner loops
         if bmat_dir is None:
-            bmat_dir = - time_dir
+            bmat_dir = -time_dir
         self.time_order = np.arange(self.config.shape[1], dtype=np.int64)[::bmat_dir]
         self.times = np.arange(self.config.shape[1], dtype=np.int64)[::time_dir]
         self.sites = np.arange(self.config.shape[0], dtype=np.int64)
 
         # Pre-compute time flow matrices
-        self.bmats_up, self.bmats_dn = compute_timestep_mats(self.exp_k, self.nu, self.config)
+        self.bmats_up, self.bmats_dn = compute_timestep_mats(
+            self.exp_k, self.nu, self.config
+        )
 
         # Initialize QMC statistics
         self.status = ""
@@ -61,12 +57,14 @@ class BaseDQMC(ABC):
 
     def simulate(self, warmup, measure, callback):
         sweeps = warmup + measure
-        out = 0.
+        out = 0.0
         # Run sweeps
         self.status = "warmup"
         for sweep in range(sweeps):
             self.iteration()
-            logger.info("[%s] %3d Ratio: %.2f", self.status, sweep, self.acceptance_probs[-1])
+            logger.info(
+                "[%s] %3d Ratio: %.2f", self.status, sweep, self.acceptance_probs[-1]
+            )
             # perform measurements
             if sweep > warmup:
                 self.status = "measurements"
@@ -79,7 +77,6 @@ class BaseDQMC(ABC):
 
 
 class DQMC:
-
     def __init__(self, model, num_timesteps, time_dir=+1, bmat_dir=None):
         # Init QMC variables
         self.exp_k, self.nu, self.config = init_qmc(model, num_timesteps)
@@ -87,13 +84,15 @@ class DQMC:
         # Set up time direction and order of inner loops
         if bmat_dir is None:
             # Default B-matrix direction is the reverse of the time direction
-            bmat_dir = - time_dir
+            bmat_dir = -time_dir
         self.bmat_order = np.arange(self.config.shape[1], dtype=np.int64)[::bmat_dir]
         self.times = np.arange(self.config.shape[1], dtype=np.int64)[::time_dir]
         self.sites = np.arange(self.config.shape[0], dtype=np.int64)
 
         # Pre-compute time flow matrices
-        self.bmats_up, self.bmats_dn = compute_timestep_mats(self.exp_k, self.nu, self.config)
+        self.bmats_up, self.bmats_dn = compute_timestep_mats(
+            self.exp_k, self.nu, self.config
+        )
 
         # Initialize QMC statistics
         self.status = ""
@@ -112,8 +111,16 @@ class DQMC:
         return self._gf_up, self._gf_dn
 
     def iteration(self):
-        accepted = iteration_fast(self.exp_k, self.nu, self.config, self.bmats_up, self.bmats_dn,
-                                  self._gf_up, self._gf_dn, self.times)
+        accepted = iteration_fast(
+            self.exp_k,
+            self.nu,
+            self.config,
+            self.bmats_up,
+            self.bmats_dn,
+            self._gf_up,
+            self._gf_dn,
+            self.times,
+        )
         # Compute and save acceptance ratio
         acc_ratio = accepted / self.config.size
         self.acceptance_probs.append(acc_ratio)
@@ -122,12 +129,14 @@ class DQMC:
 
     def simulate(self, warmup, measure, callback):
         sweeps = warmup + measure
-        out = 0.
+        out = 0.0
         # Run sweeps
         self.status = "warmup"
         for sweep in range(sweeps):
             self.iteration()
-            logger.info("[%s] %3d Ratio: %.2f", self.status, sweep, self.acceptance_probs[-1])
+            logger.info(
+                "[%s] %3d Ratio: %.2f", self.status, sweep, self.acceptance_probs[-1]
+            )
             # perform measurements
             if sweep > warmup:
                 self.status = "measurements"
