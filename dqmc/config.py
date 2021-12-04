@@ -13,6 +13,8 @@ import matplotlib.pyplot as plt
 
 UP, DN = +1, -1
 
+rng = np.random.default_rng()
+
 
 def init_configuration(num_sites: int, num_timesteps: int) -> np.ndarray:
     """Initializes the configuration array with a random distribution of `-1` and `+1`.
@@ -29,11 +31,10 @@ def init_configuration(num_sites: int, num_timesteps: int) -> np.ndarray:
     config : (N, L) np.ndarray
         The array representing the configuration or or Hubbard-Stratonovich field.
     """
-    return 2 * np.random.randint(0, 2, size=(num_sites, num_timesteps), dtype=np.int8) - 1
+    return rng.choice([-1, +1], size=(num_sites, num_timesteps)).astype(np.int8)
 
 
 class ConfigurationPlot:
-
     def __init__(self, config, ax=None):
         if ax is None:
             fig, ax = plt.subplots()
@@ -66,7 +67,7 @@ class ConfigurationPlot:
         plt.show(block=block)
 
     @staticmethod
-    def pause(interval=0.):
+    def pause(interval=0.0):
         plt.pause(interval)
 
     def draw(self, pause=1e-10):
