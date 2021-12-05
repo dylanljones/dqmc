@@ -8,33 +8,11 @@
 # LICENSE file in the root directory and this permission notice shall
 # be included in all copies or substantial portions of the Software.
 
-import numpy as np
 import matplotlib.pyplot as plt
-
-UP, DN = +1, -1
-
-rng = np.random.default_rng()
-
-
-def init_configuration(num_sites: int, num_timesteps: int) -> np.ndarray:
-    """Initializes the configuration array with a random distribution of `-1` and `+1`.
-
-    Parameters
-    ----------
-    num_sites : int
-        The number of sites `N` of the lattice model.
-    num_timesteps : int
-        The number of time steps `L` used in the Monte Carlo simulation.
-
-    Returns
-    -------
-    config : (N, L) np.ndarray
-        The array representing the configuration or or Hubbard-Stratonovich field.
-    """
-    return rng.choice([-1, +1], size=(num_sites, num_timesteps)).astype(np.int8)
 
 
 class ConfigurationPlot:
+
     def __init__(self, config, ax=None):
         if ax is None:
             fig, ax = plt.subplots()

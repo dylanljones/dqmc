@@ -4,6 +4,8 @@
 #
 # Copyright (c) 2021, Dylan Jones
 
+# flake8: noqa
+
 import logging
 import numpy as np
 import matplotlib.pyplot as plt
@@ -27,10 +29,10 @@ def build_temperature_array(temps, model, num_timesteps, warmup=500, measure=300
 def main():
     shape = (4, 4)
     u, mu, hop = 4.0, 0.0, 1.0
-    temps = np.geomspace(0.2, 100, 50)
+    temps = np.geomspace(0.2, 100, 20)
     num_timesteps = 50
     warmup, measure = 500, 2000
-    model = hubbard_hypercube(shape, u=u, mu=mu, hop=hop, beta=1.0, periodic=(0,1))
+    model = hubbard_hypercube(shape, u=u, mu=mu, hop=hop, beta=1.0, periodic=(0, 1))
 
     moments = build_temperature_array(temps, model, num_timesteps, warmup, measure,
                                       callback=mfuncs.mz_moment)

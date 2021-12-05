@@ -29,8 +29,7 @@ import numpy.linalg as la
 from scipy.linalg import expm
 from numba import njit, float64, int8, int64, void
 from numba import types as nt
-from .model import HubbardModel
-from .config import init_configuration, UP, DN
+from .model import HubbardModel  # noqa: F401
 
 logger = logging.getLogger("dqmc")
 
@@ -38,6 +37,28 @@ expk_t = float64[:, :]
 conf_t = int8[:, :]
 bmat_t = float64[:, :, ::1]
 gmat_t = float64[:, ::1]
+
+rng = np.random.default_rng()
+
+UP, DN = +1, -1
+
+
+def init_configuration(num_sites: int, num_timesteps: int) -> np.ndarray:
+    """Initializes the configuration array with a random distribution of `-1` and `+1`.
+
+    Parameters
+    ----------
+    num_sites : int
+        The number of sites `N` of the lattice model.
+    num_timesteps : int
+        The number of time steps `L` used in the Monte Carlo simulation.
+
+    Returns
+    -------
+    config : (N, L) np.ndarray
+        The array representing the configuration or or Hubbard-Stratonovich field.
+    """
+    return rng.choice([-1, +1], size=(num_sites, num_timesteps)).astype(np.int8)
 
 
 def init_qmc(model, num_timesteps):
@@ -341,8 +362,7 @@ def iteration_det(exp_k, nu, config, bmats_up, bmats_dn, old_det, times):
         np.random.shuffle(sites)
         for i in sites:
             # Propose update by flipping spin in confguration
-            config[i, t] *= -1
-            update_timestep_mats(exp_k, nu, config, bmats_up, bmats_dn, t)
+            update(exp_k, nu, config, bmats_up, bmats_dn, i, t)
             # Compute determinant product of the new configuration
             m_up, m_dn = compute_m_matrices(bmats_up, bmats_dn, times)
             det_up = la.det(m_up)
@@ -358,8 +378,7 @@ def iteration_det(exp_k, nu, config, bmats_up, bmats_dn, old_det, times):
                 old_det = new_det
             else:
                 # Move not accepted: Revert to the old configuration by updating again
-                config[i, t] *= -1
-                update_timestep_mats(exp_k, nu, config, bmats_up, bmats_dn, t)
+                update(exp_k, nu, config, bmats_up, bmats_dn, i, t)
 
     return old_det, accepted
 
@@ -580,11 +599,10 @@ def iteration_fast(exp_k, nu, config, bmats_up, bmats_dn, gf_up, gf_dn, times):
             if accept:
                 # Move accepted
                 accepted += 1
-                # Update configuration and corresponding B-matrices
-                config[i, t] = -config[i, t]
-                update_timestep_mats(exp_k, nu, config, bmats_up, bmats_dn, t)
                 # Update Green's functions
                 update_greens(nu, config, gf_up, gf_dn, i, t)
+                # Update configuration and corresponding B-matrices
+                update(exp_k, nu, config, bmats_up, bmats_dn, i, t)
         # Wrap Green's function between time steps
         wrap_greens(bmats_up, bmats_dn, gf_up, gf_dn, t)
     return accepted
