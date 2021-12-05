@@ -24,10 +24,19 @@ python setup.py install
 ## References
 1. Z. Bai, W. Chen, R. T. Scalettar and I. Yamazaki
    Numerical Methods for Quantum Monte Carlo Simulations of the Hubbard Model
-   Series in Contemporary Applied Mathematics, 1-110 (2010) [DOI](10.1142/9789814273268_0001)
-2. S. R. White, D. J. Scalapino, R. L. Sugar, E. Y. Loh, J. E. Gubernatis, and R. T. Scalettar
+   Series in Contemporary Applied Mathematics, 1-110 (2010) [DOI](https://doi.org/10.1142/9789814273268_0001)
+2. S. R. White, D. J. Scalapino, R. L. Sugar, E. Y. Loh, J. E. Gubernatis and R. T. Scalettar
    Numerical study of the two-dimensional Hubbard model
    Phys. Rev. B 40, 506-516 (1989) [DOI](https://doi.org/10.1103/PhysRevB.40.506)
+3. P. Broecker and S. Trebst
+   Numerical stabilization of entanglement computation in auxiliary field quantum Monte Carlo simulations of interacting many-fermion systems
+   Phys. Rev. E 94, 063306 (2016) [DOI](https://doi.org/10.1103/PhysRevE.94.063306)
+4. J. E. Hirsch
+   Two-dimensional Hubbard model: Numerical simulation study
+   Phys. Rev. B 31, 4403 (1985) [DOI](https://doi.org/10.1103/PhysRevB.31.4403)
+5. J. E. Hirsch
+   Discrete Hubbard-Stratonovich transformation for fermion lattice models
+   Phys. Rev. B 29, 4159 (1984) [DOI](https://doi.org/10.1103/PhysRevB.28.4059)
 
 
 ## Contributing
