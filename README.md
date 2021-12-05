@@ -32,8 +32,10 @@ python setup.py install
 
 ## Contributing
 
-Before submitting pull requests, run the [black](https://github.com/psf/black)
-formatter, lints and tests with the following commands from the root of the repo:
+Before submitting pull requests, run the lints, tests and optionally the
+[black](https://github.com/psf/black) formatter with the following commands
+from the root of the repo:
 `````commandline
+python -m black dqmc/
 pre-commit run
 `````

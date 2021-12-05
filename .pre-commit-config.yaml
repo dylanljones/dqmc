@@ -11,12 +11,12 @@ repos:
           - id: check-added-large-files
           - id: mixed-line-ending
 
-    - repo: https://github.com/psf/black
-      rev: stable
-      types: [ python ]
-      hooks:
-        - id: black
-          args: [ --safe ]
+#    - repo: https://github.com/psf/black
+#      rev: stable
+#      types: [ python ]
+#      hooks:
+#        - id: black
+#          args: [ --safe ]
 
     - repo: https://gitlab.com/pycqa/flake8
       rev: 4.0.0
