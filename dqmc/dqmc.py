@@ -430,7 +430,7 @@ def compute_acceptance_fast(nu, config, gf_up, gf_dn, i, t):
 
 @njit(void(float64, conf_t, gmat_t, gmat_t, int64, int64), cache=True)
 def update_greens(nu, config, gf_up, gf_dn, i, t):
-    r"""Updates the Green's function after accepting a spin-flip.
+    r"""Updates the Green's function via the Sherman-Morrison formula.
 
     Notes
     -----
@@ -478,7 +478,7 @@ def update_greens(nu, config, gf_up, gf_dn, i, t):
 
 @njit(void(float64, conf_t, gmat_t, gmat_t, int64, int64), cache=True)
 def update_greens2(nu, config, gf_up, gf_dn, k, t):
-    r"""Updates the Green's function after accepting a spin-flip.
+    r"""Updates the Green's function via the Sherman-Morrison formula.
 
     Notes
     -----
@@ -554,8 +554,6 @@ def wrap_greens(bmats_up, bmats_dn, gf_up, gf_dn, t):
 )
 def iteration_fast(exp_k, nu, config, bmats_up, bmats_dn, gf_up, gf_dn, times):
     r"""Runs one iteration of the rank-1 DQMC-scheme.
-
-    Todo: Update Green's function before or after config-flip?
 
     Parameters
     ----------
