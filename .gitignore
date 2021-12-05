@@ -1,8 +1,10 @@
 # Specific files
 
-# Byte-compiled / optimized / DLL files
+# Byte-compiled / optimized / cached / DLL files
 __pycache__/
 .idea/
+.hypothesis/
+.pytest_cache/
 
 # Distribution / packaging
 .Python
