@@ -33,7 +33,7 @@ python setup.py install
 ## Contributing
 
 Before submitting pull requests, run the [black](https://github.com/psf/black)
-formatter, and lints and tests with the following commands from the root of the repo:
+formatter, lints and tests with the following commands from the root of the repo:
 `````commandline
 pre-commit run
 `````
