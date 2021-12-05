@@ -9,6 +9,7 @@
 # be included in all copies or substantial portions of the Software.
 
 from setuptools import setup, find_packages
+import versioneer
 
 
 def requirements():
@@ -23,10 +24,11 @@ def long_description():
 
 setup(
     name='dqmc',
-    version='0.0.1',
+    version=versioneer.get_version(),
+    cmdclass=versioneer.get_cmdclass(),
     author='Dylan Jones',
     author_email='dylanljones94@gmail.com',
-    description='Python package for lattice Quantum Monte Carlo simulations',
+    description='Determinant Quantum Monte Carlo simulations in python',
     long_description=long_description(),
     long_description_content_type="text/markdown",
     url='https://github.com/dylanljones/dqmc',

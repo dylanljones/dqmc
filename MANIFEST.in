@@ -3,3 +3,7 @@ include *.txt
 
 # Include the README file
 include *.md
+
+# Include versioneer files
+include versioneer.py
+include dqmc/_version.py

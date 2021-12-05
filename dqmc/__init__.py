@@ -22,3 +22,6 @@ from .dqmc import (
     iteration_fast,
 )
 from .simulator import BaseDQMC, DQMC
+
+from . import _version
+__version__ = _version.get_versions()['version']
