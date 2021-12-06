@@ -3,7 +3,7 @@
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 [![GitHub license](https://badgen.net/github/license/Naereen/Strapdown.js)](https://github.com/Naereen/StrapDown.js/blob/master/LICENSE)
 
-Determinant Quantum Monte Carlo simulations in python
+Determinant Quantum Monte Carlo simulations in Python
 
 NOTE: This project is still under development!
 

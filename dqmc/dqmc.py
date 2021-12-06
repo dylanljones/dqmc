@@ -429,7 +429,68 @@ def compute_acceptance_fast(nu, config, gf_up, gf_dn, i, t):
 
 
 @njit(void(float64, conf_t, gmat_t, gmat_t, int64, int64), cache=True)
-def update_greens(nu, config, gf_up, gf_dn, i, t):
+def update_greens(nu, config, gf_up, gf_dn, k, t):
+    r"""Performs a Sherman-Morrison update of the Green's function.
+
+    Parameters
+    ----------
+    nu : float
+        The parameter ν defined by :math:'\cosh(ν) = e^{U Δτ / 2}'
+    config : (N, L) np.ndarray
+        The configuration or Hubbard-Stratonovich field.
+    k : int
+        The site index :math:'i' of the proposed spin-flip.
+    t : int
+        The time-step index :math:'t' of the proposed spin-flip.
+    gf_up : np.ndarray
+        The spin-up Green's function.
+    gf_dn : np.ndarray
+        The spin-down Green's function.
+
+    Notes
+    -----
+    The update of the Green's function *before* flipping spin at site i and time t
+    is defined as
+    ..math::
+        G_σ = G_σ - (α_σ / d_σ) u_σ w_σ^T
+        u_σ = [I - G_σ] e_i
+        w_σ = G_σ^T e_i
+        α_σ = e^{-2 σ ν s(i, t)} - 1
+        d_σ = 1 + (1 - G_{ii, σ}) α_σ
+
+    References
+    ----------
+    .. [1] Z. Bai et al., “Numerical Methods for Quantum Monte Carlo Simulations
+           of the Hubbard Model”, in Series in Contemporary Applied Mathematics,
+           Vol. 12 (June 2009), p. 1.
+    """
+    num_sites = config.shape[0]
+
+    # Compute alphas
+    arg = -2 * nu * config[k, t]
+    alpha_up = np.expm1(UP * arg)
+    alpha_dn = np.expm1(DN * arg)
+    # Compute acceptance ratios
+    d_up = 1 + alpha_up * (1 - gf_up[k, k])
+    d_dn = 1 + alpha_dn * (1 - gf_dn[k, k])
+    # Compute fractions
+    frac_up = alpha_up / d_up
+    frac_dn = alpha_dn / d_dn
+
+    # Compute update to Green's functions
+    idel = np.zeros(num_sites)
+    idel[k] = 1.
+
+    tmp = np.zeros((num_sites, 1))
+    tmp[:, 0] = gf_up[:, k] - idel
+    gf_up += frac_up * tmp * gf_up[k, :]
+
+    tmp[:, 0] = gf_dn[:, k] - idel
+    gf_dn += frac_dn * tmp * gf_dn[k, :]
+
+
+@njit(void(float64, conf_t, gmat_t, gmat_t, int64, int64), cache=True)
+def update_greens2(nu, config, gf_up, gf_dn, i, t):
     r"""Updates the Green's function via the Sherman-Morrison formula.
 
     Notes
@@ -457,7 +518,6 @@ def update_greens(nu, config, gf_up, gf_dn, i, t):
     gf_dn : np.ndarray
         The spin-down Green's function.
     """
-    # ToDo: Check if implementation is right
     # Compute alphas
     arg = -2 * nu * config[i, t]
     alpha_up = np.expm1(UP * arg)
@@ -477,18 +537,8 @@ def update_greens(nu, config, gf_up, gf_dn, i, t):
 
 
 @njit(void(float64, conf_t, gmat_t, gmat_t, int64, int64), cache=True)
-def update_greens2(nu, config, gf_up, gf_dn, k, t):
-    r"""Updates the Green's function via the Sherman-Morrison formula.
-
-    Notes
-    -----
-    The update of the Green's function after the spin at
-    site i and time t has been flipped  is defined as
-    ..math::
-        α_σ = e^{-2 σ ν s(i, t)} - 1
-        c_{j,σ} = -α_σ G_{ji,σ} + δ_{ji} α_σ
-        b_{k,σ} = G_{ki,σ} / (1 + c_{i,σ})
-        G_{jk,σ} = G_{jk,σ} - b_{j,σ}c_{k,σ}
+def update_greens3(nu, config, gf_up, gf_dn, k, t):
+    r"""Performs a Sherman-Morrison update of the Green's function.
 
     Parameters
     ----------
@@ -505,25 +555,29 @@ def update_greens2(nu, config, gf_up, gf_dn, k, t):
     gf_dn : np.ndarray
         The spin-down Green's function.
     """
+    num_sites = config.shape[0]
     # Compute alphas
     arg = -2 * nu * config[k, t]
     alpha_up = np.expm1(UP * arg)
     alpha_dn = np.expm1(DN * arg)
+    # Compute acceptance ratios
     d_up = 1 + alpha_up * (1 - gf_up[k, k])
     d_dn = 1 + alpha_dn * (1 - gf_dn[k, k])
+    # Compute fractions
     frac_up = alpha_up / d_up
     frac_dn = alpha_dn / d_dn
 
-    num_sites = config.shape[0]
+    # Compute update vectors u and w^T
+    u_up = np.copy(gf_up[:, k:k+1])
+    u_up[k] = 1. - u_up[k]
+    wt_up = gf_up[k:k+1, :]
 
-    gfu, gfd = np.copy(gf_up), np.copy(gf_dn)
-    for i in range(num_sites):
-        idel = 0
-        if i == k:
-            idel = 1
-        for j in range(num_sites):
-            gf_up[i, j] = gfu[i, j] + frac_up * (gfu[i, k] - idel) * gfu[k, j]
-            gf_dn[i, j] = gfd[i, j] + frac_dn * (gfd[i, k] - idel) * gfd[k, j]
+    u_dn = np.copy(gf_dn[:, k:k+1])
+    u_dn[k] = 1. - u_dn[k]
+    wt_dn = gf_dn[k:k + 1, :]
+    # update GF's
+    gf_up -= frac_up * np.dot(u_up, wt_up)
+    gf_dn -= frac_dn * np.dot(u_dn, wt_dn)
 
 
 @njit(void(bmat_t, bmat_t, gmat_t, gmat_t, int64), cache=True)
@@ -545,8 +599,8 @@ def wrap_greens(bmats_up, bmats_dn, gf_up, gf_dn, t):
     """
     b_up = bmats_up[t]
     b_dn = bmats_dn[t]
-    gf_up[:] = np.dot(np.dot(b_up, gf_up), la.inv(b_up))
-    gf_dn[:] = np.dot(np.dot(b_dn, gf_dn), la.inv(b_dn))
+    gf_up[:, :] = np.dot(np.dot(b_up, gf_up), la.inv(b_up))
+    gf_dn[:, :] = np.dot(np.dot(b_dn, gf_dn), la.inv(b_dn))
 
 
 @njit(
@@ -576,10 +630,6 @@ def iteration_fast(exp_k, nu, config, bmats_up, bmats_dn, gf_up, gf_dn, times):
 
     Returns
     -------
-    gf_up : np.ndarray
-        The spin-up Green's function after the warmup loop.
-    gf_dn : np.ndarray
-        The spin-down Green's function after the warmup loop.
     accepted : int
         The number of accepted spin flips.
     """
@@ -597,9 +647,9 @@ def iteration_fast(exp_k, nu, config, bmats_up, bmats_dn, gf_up, gf_dn, times):
             if accept:
                 # Move accepted
                 accepted += 1
-                # Update Green's functions
+                # Update Green's functions *before* updating configuration
                 update_greens(nu, config, gf_up, gf_dn, i, t)
-                # Update configuration and corresponding B-matrices
+                # Update configuration and B-matrices *after* GF update
                 update(exp_k, nu, config, bmats_up, bmats_dn, i, t)
         # Wrap Green's function between time steps
         wrap_greens(bmats_up, bmats_dn, gf_up, gf_dn, t)
