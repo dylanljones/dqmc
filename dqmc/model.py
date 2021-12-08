@@ -47,9 +47,11 @@ class HubbardModel(Lattice):
 
 def hubbard_hypercube(shape, u=0.0, eps=0.0, hop=1.0, mu=0.0, beta=0.0, periodic=None):
     dim = 1 if isinstance(shape, int) else len(shape)
-    if isinstance(periodic, bool) and periodic:
-        periodic = np.arange(dim)
-
+    if isinstance(periodic, bool):
+        if periodic:
+            periodic = np.arange(dim)
+        else:
+            periodic = None
     model = HubbardModel(np.eye(dim), u, eps, hop, mu, beta)
     model.add_atom()
     model.add_connections(1)
