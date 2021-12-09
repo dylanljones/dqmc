@@ -40,21 +40,25 @@ def build_inter_temp_array(inters, temps, model, num_timesteps, warmup=500,
 def main():
     shape = 10
     u, mu, hop = 4.0, 2.0, 1.0
-    inters = np.arange(5, 10, 1.0)
-    temps = np.geomspace(0.2, 100, 20)
+    inters = [4, 5, 6, 7, 8]  # np.arange(5, 10, 1.0)
+    temps = np.geomspace(0.2, 100, 15)
     num_timesteps = 50
     warmup, measure = 500, 3000
     model = hubbard_hypercube(shape, u=u, mu=mu, hop=hop, beta=1.0, periodic=True)
 
-    moments = build_inter_temp_array(inters, temps, model, num_timesteps, warmup,
-                                     measure, callback=mfuncs.mz_moment)
+    # moments = build_inter_temp_array(inters, temps, model, num_timesteps, warmup,
+    #                                  measure, callback=mfuncs.mz_moment)
+    # np.savez("mz2_chain.npz", moments=moments)
+    moments = np.load("mz2_chain.npz")["moments"]
 
     fig, ax = plt.subplots()
     ax.set_xscale("log")
-    for u, mom in zip(inters, moments):
-        ax.plot(temps, np.mean(mom.T, axis=0), label=u)
+    for u, mom in zip(inters[::-1], moments[::-1]):
+        ax.plot(temps, np.mean(mom.T, axis=0), marker="o", label=f"$U=${u}")
     ax.set_xlabel("T")
     ax.set_ylabel(r"$\langle m_z^2 \rangle$")
+    ax.grid()
+    ax.legend()
     plt.show()
 
 
