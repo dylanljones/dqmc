@@ -643,8 +643,8 @@ def iteration_fast(exp_k, nu, config, bmats_up, bmats_dn, gf_up, gf_dn, times):
             # Propose update by flipping spin in confguration
             d = compute_acceptance_fast(nu, config, gf_up, gf_dn, i, t)
             # Check if move is accepted
-            accept = random.random() < d
-            if accept:
+            r = random.random()
+            if r < d / (d + 1):
                 # Move accepted
                 accepted += 1
                 # Update Green's functions *before* updating configuration
