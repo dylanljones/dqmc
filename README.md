@@ -1,4 +1,4 @@
-# dqmc 0.0.1
+# DQMC
 
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 [![GitHub license](https://badgen.net/github/license/Naereen/Strapdown.js)](https://github.com/Naereen/StrapDown.js/blob/master/LICENSE)
@@ -25,6 +25,16 @@ python setup.py install
 ## Usage
 
 
+## Contributing
+
+Before submitting pull requests, run the lints, tests and optionally the
+[black](https://github.com/psf/black) formatter with the following commands
+from the root of the repo:
+`````commandline
+python -m black dqmc/
+pre-commit run
+`````
+
 ## References
 1. Z. Bai, W. Chen, R. T. Scalettar and I. Yamazaki
    "Numerical Methods for Quantum Monte Carlo Simulations of the Hubbard Model"
@@ -41,14 +51,3 @@ python setup.py install
 5. J. E. Hirsch
    "Discrete Hubbard-Stratonovich transformation for fermion lattice models"
    Phys. Rev. B 29, 4159 (1984) [DOI](https://doi.org/10.1103/PhysRevB.28.4059)
-
-
-## Contributing
-
-Before submitting pull requests, run the lints, tests and optionally the
-[black](https://github.com/psf/black) formatter with the following commands
-from the root of the repo:
-`````commandline
-python -m black dqmc/
-pre-commit run
-`````

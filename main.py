@@ -28,7 +28,7 @@ def run_dqmc(num_sites, num_timesteps, u, temp, mu=0., hop=1., warmup=500, measu
              callback=None):
     model = hubbard_hypercube(num_sites, u=u, mu=mu, hop=hop, beta=1 / temp, periodic=True)
     dqmc = DQMC(model, num_timesteps)
-    return dqmc.simulate(warmup, measure, callback)
+    return dqmc.simulate(warmup, measure, callback), dqmc.acceptance_probs
 
 
 def pformat_result(value, error, dec=5):
@@ -37,15 +37,17 @@ def pformat_result(value, error, dec=5):
 
 def main():
     num_sites = 10
-    num_timesteps = 50
+    num_timesteps = 100
     warmup = 500
     measure = 3000
     u, mu, hop = 4.0, 0.0, 1.0
-    temp = 1
+    temp = 10
 
-    res = run_dqmc(num_sites, num_timesteps, u, temp, mu, hop, warmup, measure, mfuncs.mz_moment)
+    res, probs = run_dqmc(num_sites, num_timesteps, u, temp, mu, hop, warmup, measure, mfuncs.mz_moment)
     print(res)
     print(pformat_result(np.mean(res), np.std(res), dec=4))
+    plot_acceptance_probs(probs, warmup)
+    plt.show()
 
 
 if __name__ == "__main__":

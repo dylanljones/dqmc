@@ -536,50 +536,6 @@ def update_greens2(nu, config, gf_up, gf_dn, i, t):
     gf_dn -= np.outer(b_dn, c_dn)
 
 
-@njit(void(float64, conf_t, gmat_t, gmat_t, int64, int64), cache=True)
-def update_greens3(nu, config, gf_up, gf_dn, k, t):
-    r"""Performs a Sherman-Morrison update of the Green's function.
-
-    Parameters
-    ----------
-    nu : float
-        The parameter ν defined by :math:'\cosh(ν) = e^{U Δτ / 2}'
-    config : (N, L) np.ndarray
-        The configuration or Hubbard-Stratonovich field.
-    k : int
-        The site index :math:'i' of the proposed spin-flip.
-    t : int
-        The time-step index :math:'t' of the proposed spin-flip.
-    gf_up : np.ndarray
-        The spin-up Green's function.
-    gf_dn : np.ndarray
-        The spin-down Green's function.
-    """
-    num_sites = config.shape[0]
-    # Compute alphas
-    arg = -2 * nu * config[k, t]
-    alpha_up = np.expm1(UP * arg)
-    alpha_dn = np.expm1(DN * arg)
-    # Compute acceptance ratios
-    d_up = 1 + alpha_up * (1 - gf_up[k, k])
-    d_dn = 1 + alpha_dn * (1 - gf_dn[k, k])
-    # Compute fractions
-    frac_up = alpha_up / d_up
-    frac_dn = alpha_dn / d_dn
-
-    # Compute update vectors u and w^T
-    u_up = np.copy(gf_up[:, k:k+1])
-    u_up[k] = 1. - u_up[k]
-    wt_up = gf_up[k:k+1, :]
-
-    u_dn = np.copy(gf_dn[:, k:k+1])
-    u_dn[k] = 1. - u_dn[k]
-    wt_dn = gf_dn[k:k + 1, :]
-    # update GF's
-    gf_up -= frac_up * np.dot(u_up, wt_up)
-    gf_dn -= frac_dn * np.dot(u_dn, wt_dn)
-
-
 @njit(void(bmat_t, bmat_t, gmat_t, gmat_t, int64), cache=True)
 def wrap_greens(bmats_up, bmats_dn, gf_up, gf_dn, t):
     r"""Wraps the Green's functions between the time step :math:'t' and :math:'t+1'.
@@ -614,7 +570,7 @@ def iteration_fast(exp_k, nu, config, bmats_up, bmats_dn, gf_up, gf_dn, times):
     exp_k : np.ndarray
         The matrix exponential of the kinetic hamiltonian.
     nu : float
-        The parameter ν defined by :math:'\cosh(ν) = e^{U Δτ / 2}'
+        The parameter ν defined by :math:'\cosh(ν) = e^{U Δτ / 2}'.
     config : (N, L) np.ndarray
         The configuration or Hubbard-Stratonovich field.
     bmats_up : (L, N, N) np.ndarray
@@ -643,8 +599,8 @@ def iteration_fast(exp_k, nu, config, bmats_up, bmats_dn, gf_up, gf_dn, times):
             # Propose update by flipping spin in confguration
             d = compute_acceptance_fast(nu, config, gf_up, gf_dn, i, t)
             # Check if move is accepted
-            accept = random.random() < d
-            if accept:
+            r = random.random()
+            if r < d / (d + 1):
                 # Move accepted
                 accepted += 1
                 # Update Green's functions *before* updating configuration
