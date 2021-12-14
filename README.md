@@ -1,7 +1,8 @@
 # DQMC
 
+![GitHub tag (latest by date)](https://img.shields.io/github/v/tag/dylanljones/dqmc)
+![GitHub license](https://img.shields.io/github/license/dylanljones/dqmc)
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
-[![GitHub license](https://badgen.net/github/license/Naereen/Strapdown.js)](https://github.com/Naereen/StrapDown.js/blob/master/LICENSE)
 
 Determinant Quantum Monte Carlo simulations of the Hubbard model in Python.
 
