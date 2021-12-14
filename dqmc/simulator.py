@@ -13,11 +13,14 @@
 import numpy as np
 import logging
 from .dqmc import init_qmc, compute_timestep_mats, compute_greens, iteration_fast
+from .model import hubbard_hypercube
 
 logger = logging.getLogger("dqmc")
 
 
 class DQMC:
+    """Main DQMC simulator instance."""
+
     def __init__(self, model, num_timesteps, time_dir=+1, bmat_dir=None):
         # Init QMC variables
         self.exp_k, self.nu, self.config = init_qmc(model, num_timesteps)
@@ -68,14 +71,14 @@ class DQMC:
         # Recompute Green's functions
         self.recompute_greens()
 
-    def simulate(self, warmup, measure, callback):
+    def simulate(self, warmup, measure, callback=None, *args, **kwargs):
         sweeps = warmup + measure
         out = 0.0
         # Run sweeps
         self.status = "warmup"
         for sweep in range(sweeps):
             self.iteration()
-            logger.info(
+            logger.debug(
                 "[%s] %3d Ratio: %.2f", self.status, sweep, self.acceptance_probs[-1]
             )
             # perform measurements
@@ -83,7 +86,13 @@ class DQMC:
                 self.status = "measurements"
                 gf_up, gf_dn = self.get_greens()
                 if callback is not None:
-                    out += callback(gf_up, gf_dn)
+                    out += callback(gf_up, gf_dn, *args, **kwargs)
                 else:
                     out += np.array([gf_up, gf_dn])
         return out / measure
+
+
+def run_dqmc(shape, u, eps, hop, mu, beta, num_timesteps, warmup, measure, callback):
+    model = hubbard_hypercube(shape, u, eps, hop, mu, beta, periodic=True)
+    dqmc = DQMC(model, num_timesteps)
+    return dqmc.simulate(warmup, measure, callback=callback)
