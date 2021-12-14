@@ -133,9 +133,9 @@ params = (
   shape, inters, eps, hop, mu, beta, num_timesteps,
   warmup, measure, mfuncs.occupation
 )
-run_parallel(params)
+results = run_parallel(params)
 ```
-Scalar arguments are expanded to a list automatically.
+Scalar arguments are expanded to a list and shared by the processes.
 
 ## Contributing
 
