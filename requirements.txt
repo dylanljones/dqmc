@@ -4,3 +4,4 @@ matplotlib>=3.0.0
 numba>=0.50.0
 hypothesis>=6.0.0
 lattpy>=0.6
+psutil>=5.0.0

@@ -25,6 +25,8 @@ python setup.py install
 
 ## Usage
 
+### Initializing the Hubbard model
+
 In order to run a simulation, a Hubbard model has to be constructed. This can be 
 done manually by initializing the included `HubbardModel`:
 ```python
@@ -38,7 +40,7 @@ model = HubbardModel(vectors, u=4., eps=0., hop=1., mu=0., beta=1/5)
 model.add_atom()
 # Set nearest neighbor hoppings
 model.add_connections(1)
-# Build the lattice iwth periodic boundary conditions along both axis
+# Build the lattice with periodic boundary conditions along both axis
 model.build((5, 5), relative=True, periodic=(0, 1))
 ```
 or by using the helper function `hubbard_hypercube` to construct a `d`-dimensional 
@@ -51,6 +53,8 @@ shape = (5, 5)
 model = hubbard_hypercube(shape, u=4., eps=0., hop=1., mu=0., beta=1/5, periodic=True)
 ```
 Setting `periodic=True` marks all axis as periodic.
+
+### Running simulations and measuring observables
 
 To run a Determinant Quantum Monte carlo simulation the `DQMC`-object can be used. 
 This is a wrapper of the main DQMC methods, which are contained in `dqmc/dqmc.py` 
@@ -78,6 +82,60 @@ measurement sweeps. If no callback is given the local Green's function `G_{ij}` 
 measured by default. A collection of methods for measuring observables is contained
 in the `mfuncs` module.
 
+The above steps can be simplified by calling the `run_dqmc`-method:
+```python
+from dqmc import run_dqmc, mfuncs
+
+shape = 10
+u, eps, mu, hop = 4.0, 0.0, 0.0, 1.0
+beta = 1.0
+num_timesteps = 100
+warmup, measure = 300, 3000
+
+res = run_dqmc(shape, u, eps, hop, mu, beta, num_timesteps, 
+               warmup, measure, mfuncs.occupation)
+```
+
+### Multiprocessing
+
+To run multiple DQMC simulations in parallel use the `ProcessPool`-object:
+```python
+from dqmc import ProcessPool, run_dqmc, mfuncs
+
+shape = 10
+inters = [2, 3, 4, 5, 6, 7, 8, 9]
+eps, mu, hop = 0.0, 0.0, 1.0
+beta = 1.0
+num_timesteps = 100
+warmup, measure = 300, 3000
+
+params = (
+  shape, inters, eps, hop, mu, beta, num_timesteps,
+  warmup, measure, mfuncs.occupation
+)
+
+with ProcessPool(max_workers=4) as executor:
+  executor.distribute(run_dqmc, *params)  # Distribute workloads
+  results = executor.complete_all()  # Wait for results
+```
+or the inlcuded `run_parallel`-method, which internally calls the `run_dqmc`-method:
+```python
+from dqmc import run_parallel, mfuncs
+
+shape = 10
+inters = [2, 3, 4, 5, 6, 7, 8, 9]
+eps, mu, hop = 0.0, 0.0, 1.0
+beta = 1.0
+num_timesteps = 100
+warmup, measure = 300, 3000
+
+params = (
+  shape, inters, eps, hop, mu, beta, num_timesteps,
+  warmup, measure, mfuncs.occupation
+)
+run_parallel(params)
+```
+Scalar arguments are expanded to a list automatically.
 
 ## Contributing
 

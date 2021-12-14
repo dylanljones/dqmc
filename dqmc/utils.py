@@ -8,6 +8,7 @@
 # LICENSE file in the root directory and this permission notice shall
 # be included in all copies or substantial portions of the Software.
 
+import time as _time
 import matplotlib.pyplot as plt
 
 
@@ -52,3 +53,27 @@ class ConfigurationPlot:
         self.fig.canvas.flush_events()
         plt.show(block=False)
         plt.pause(pause)
+
+
+class Timer:
+
+    def __init__(self):
+        self.t0 = 0
+
+    def start(self):
+        self.t0 = _time.perf_counter()
+
+    def time(self):
+        if not self.t0:
+            raise RuntimeError("Timer has not been started yet!")
+        return _time.perf_counter() - self.t0
+
+    def __enter__(self):
+        self.start()
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        t = self.time()
+        s = f"Total time: {t:.2f}s"
+        line = "-" * (len(s) + 1)
+        print(line)
+        print(s)
