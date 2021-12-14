@@ -74,7 +74,8 @@ def callback(gf_up, gf_dn):
 ```
 The returned result must be a `np.ndarray` for ensuring correct averaging after the 
 measurement sweeps. If no callback is given the local Green's function `G_{ij}` is
-measured by default.
+measured by default. A collection of methods for measuring observables is contained
+in the `mfuncs` module.
 
 
 ## Contributing
