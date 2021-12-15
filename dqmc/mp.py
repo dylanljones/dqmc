@@ -14,7 +14,7 @@ import time
 import logging
 import psutil
 import concurrent.futures
-from .simulator import run_dqmc
+from tqdm import tqdm
 
 logger = logging.getLogger("dqmc")
 
@@ -63,20 +63,25 @@ class ProcessPool:
     def num_jobs(self):
         return len(self.jobs)
 
-    def submit(self, fn, *args, **kwargs):
+    def submit(self, fn, *args, callback=None):
         logger.info("Submitting job %s with args: %s", fn.__name__, args)
 
-        job = self.executor.submit(fn, *args, **kwargs)
+        job = self.executor.submit(fn, *args)
+        if callback is not None:
+            job.add_done_callback(callback)
         self.jobs.append(job)
         return job
 
-    def map(self, fn, params):
-        for args in params:
-            self.submit(fn, *args)
+    def map(self, fn, args):
+        return self.executor.map(fn, *zip(*args))
 
-    def distribute(self, fn, *args):
-        params = distribute(*args)
-        self.map(fn, params)
+    def distribute(self, fn, params):
+        args = distribute(*params)
+        return self.executor.map(fn, *zip(*args))
+
+    def pdistribute(self, fn, params):
+        args = distribute(*params)
+        return list(tqdm(self.executor.map(fn, *zip(*args)), total=len(args)))
 
     def stop(self, wait=True):
         self.executor.shutdown(wait)
@@ -102,8 +107,11 @@ class ProcessPool:
         self.stop()
 
 
-def run_parallel(params, max_workers=None):
+def run_parallel(fn, params, max_workers=None):
     with ProcessPool(max_workers) as executor:
-        executor.distribute(run_dqmc, *params)  # Distribute workloads
-        results = executor.complete_all()  # Wait for results
-    return results
+        return executor.distribute(fn, params)
+
+
+def prun_parallel(fn, params, max_workers=None):
+    with ProcessPool(max_workers) as executor:
+        return executor.pdistribute(fn, params)
