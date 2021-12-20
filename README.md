@@ -113,27 +113,14 @@ params = (
   shape, inters, eps, hop, mu, beta, num_timesteps,
   warmup, measure, mfuncs.occupation
 )
-
 with ProcessPool(max_workers=4) as executor:
-  executor.distribute(run_dqmc, *params)  # Distribute workloads
-  results = executor.complete_all()  # Wait for results
+  results = executor.distribute(run_dqmc, params)
 ```
 or the inlcuded `run_parallel`-method, which internally calls the `run_dqmc`-method:
 ```python
-from dqmc import run_parallel, mfuncs
+from dqmc import run_dqmc_parallel
 
-shape = 10
-inters = [2, 3, 4, 5, 6, 7, 8, 9]
-eps, mu, hop = 0.0, 0.0, 1.0
-beta = 1.0
-num_timesteps = 100
-warmup, measure = 300, 3000
-
-params = (
-  shape, inters, eps, hop, mu, beta, num_timesteps,
-  warmup, measure, mfuncs.occupation
-)
-results = run_parallel(params)
+results = run_dqmc_parallel(params, max_workers=4)
 ```
 Scalar arguments are expanded to a list and shared by the processes.
 
