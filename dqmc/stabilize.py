@@ -6,6 +6,7 @@
 
 import numpy as np
 from scipy import linalg as la
+from abc import ABC, abstractmethod
 
 
 def mdot(*arrays):
@@ -40,6 +41,16 @@ def udr(mat):
 def reconstruct_udr(u, d, r):
     """Reconstruct a matrix from an UDR decomposition."""
     return np.dot(u, np.dot(d, r))
+
+
+def svd(mat):
+    u, s_diag, vh = np.linalg.svd(mat, full_matrices=True)
+    s = np.diag(s_diag)
+    return u, s, vh
+
+
+def reconstruct_svd(u, s, vh):
+    return np.dot(u, np.dot(s, vh))
 
 
 def mdot_decomp(mats, chunk_size=1):

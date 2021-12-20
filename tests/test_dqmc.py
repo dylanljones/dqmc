@@ -242,7 +242,7 @@ def test_wrap_greens(u, beta, t):
     gf_up, gf_dn = dqmc.compute_greens(bmats_up, bmats_dn, order)
 
     # Wrap Greens function to next time slice `t+1`
-    dqmc.wrap_greens(bmats_up, bmats_dn, gf_up, gf_dn, t)
+    dqmc.wrap_up_greens(bmats_up, bmats_dn, gf_up, gf_dn, t)
 
     # Re-compute Green's function for next time slice `t+1`
     order = np.roll(order, +1)

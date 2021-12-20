@@ -26,7 +26,7 @@ import random
 import logging
 import numpy as np
 import numpy.linalg as la
-from scipy.linalg import expm
+from scipy.linalg import inv, expm
 from numba import njit, float64, int8, int64, void
 from numba import types as nt
 from .model import HubbardModel  # noqa: F401
@@ -41,6 +41,8 @@ gmat_t = float64[:, ::1]
 rng = np.random.default_rng()
 
 UP, DN = +1, -1
+
+jkwargs = dict(nogil=True, cache=True)
 
 
 def init_configuration(num_sites: int, num_timesteps: int) -> np.ndarray:
@@ -96,6 +98,7 @@ def init_qmc(model, num_timesteps):
     # Compute factor and matrix exponential of kinetic hamiltonian
     nu = math.acosh(math.exp(model.u * dtau / 2.0)) if model.u else 0
     logger.debug("nu=%s", nu)
+
     exp_k = expm(dtau * ham_k)
     logger.debug("min(e^k)=%s", np.min(exp_k))
     logger.debug("max(e^k)=%s", np.max(exp_k))
@@ -114,7 +117,7 @@ def init_qmc(model, num_timesteps):
 # =========================================================================
 
 
-@njit(float64[:, ::1](expk_t, float64, conf_t, int64, int64), cache=True)
+@njit(float64[:, ::1](expk_t, float64, conf_t, int64, int64), **jkwargs)
 def compute_timestep_mat(exp_k, nu, config, t, sigma):
     r"""Computes the time step matrix :math:'B_σ(h_t)'.
 
@@ -146,10 +149,11 @@ def compute_timestep_mat(exp_k, nu, config, t, sigma):
     b : (N, N) np.ndarray
         The matrix :math:'B_{t, σ}(h_t)'.
     """
+    # return np.dot(exp_k, np.dot(np.diag(np.exp(sigma * nu * config[:, t])), exp_k))
     return exp_k * np.exp(sigma * nu * config[:, t])
 
 
-@njit(nt.UniTuple(bmat_t, 2)(expk_t, float64, conf_t), cache=True)
+@njit(nt.UniTuple(bmat_t, 2)(expk_t, float64, conf_t), **jkwargs)
 def compute_timestep_mats(exp_k, nu, config):
     r"""Computes the time step matrices :math:'B_σ(h_t)' for all times and both spins.
 
@@ -184,7 +188,7 @@ def compute_timestep_mats(exp_k, nu, config):
     return np.ascontiguousarray(bmats_up), np.ascontiguousarray(bmats_dn)
 
 
-@njit(void(expk_t, float64, conf_t, bmat_t, bmat_t, int64), cache=True)
+@njit(void(expk_t, float64, conf_t, bmat_t, bmat_t, int64), **jkwargs)
 def update_timestep_mats(exp_k, nu, config, bmats_up, bmats_dn, t):
     r"""Updates one time step matrices :math:'B_σ(h_t)' for one time step.
 
@@ -207,7 +211,7 @@ def update_timestep_mats(exp_k, nu, config, bmats_up, bmats_dn, t):
     bmats_dn[t] = compute_timestep_mat(exp_k, nu, config, t, sigma=DN)
 
 
-@njit(float64[:, :](bmat_t, int64[:]), cache=True)
+@njit(float64[:, :](bmat_t, int64[:]), **jkwargs)
 def compute_timeflow_map(bmats, order):
     r"""Computes the fermion time flow map matrix :math:'A_σ(h)'.
 
@@ -215,7 +219,7 @@ def compute_timeflow_map(bmats, order):
     -----
     The matrix :math:'A_σ' is defined as
     ..math::
-        A_σ = B_σ(1) B_σ(2) ... B_σ(L)
+        A_σ = B_σ(i_1) B_σ(i_2) ... B_σ(i_L)
 
     Parameters
     ----------
@@ -237,7 +241,7 @@ def compute_timeflow_map(bmats, order):
     return b_prod
 
 
-@njit(nt.UniTuple(float64[:, ::1], 2)(bmat_t, bmat_t, int64[:]))
+@njit(nt.UniTuple(float64[:, ::1], 2)(bmat_t, bmat_t, int64[:]), **jkwargs)
 def compute_m_matrices(bmats_up, bmats_dn, order):
     r"""Computes the matrix :math:'M_σ = I + A_σ(h)' for both spins.
 
@@ -257,15 +261,13 @@ def compute_m_matrices(bmats_up, bmats_dn, order):
     m_dn : (N, N) np.ndarray
         The spin-down :math:'M' matrix.
     """
-    if order is None:
-        order = np.arange(len(bmats_up), dtype=np.int64)
     eye = np.eye(bmats_up[0].shape[0], dtype=np.float64)
     m_up = eye + compute_timeflow_map(bmats_up, order)
     m_dn = eye + compute_timeflow_map(bmats_dn, order)
     return m_up, m_dn
 
 
-@njit(nt.Tuple((gmat_t, gmat_t))(bmat_t, bmat_t, int64[:]), cache=True)
+#  @njit(nt.Tuple((gmat_t, gmat_t))(bmat_t, bmat_t, int64[:]), cache=True)
 def compute_greens(bmats_up, bmats_dn, order):
     r"""Computes the Green's functions for both spins.
 
@@ -291,7 +293,7 @@ def compute_greens(bmats_up, bmats_dn, order):
     return np.ascontiguousarray(gf_up), np.ascontiguousarray(gf_dn)
 
 
-@njit(void(expk_t, float64, conf_t, bmat_t, bmat_t, int64, int64), cache=True)
+@njit(void(expk_t, float64, conf_t, bmat_t, bmat_t, int64, int64), **jkwargs)
 def update(exp_k, nu, config, bmats_up, bmats_dn, i, t):
     r"""Updates the configuration and the corresponding time-step matrices.
 
@@ -325,7 +327,7 @@ def update(exp_k, nu, config, bmats_up, bmats_dn, i, t):
     nt.Tuple((float64, int64))(
         expk_t, float64, conf_t, bmat_t, bmat_t, float64, int64[:]
     ),
-    cache=True,
+    **jkwargs
 )
 def iteration_det(exp_k, nu, config, bmats_up, bmats_dn, old_det, times):
     r"""Runs one iteration of the determinant DQMC-scheme.
@@ -388,7 +390,7 @@ def iteration_det(exp_k, nu, config, bmats_up, bmats_dn, old_det, times):
 # =========================================================================
 
 
-@njit(nt.float64(float64, conf_t, gmat_t, gmat_t, int64, int64), cache=True)
+@njit(nt.float64(float64, conf_t, gmat_t, gmat_t, int64, int64), **jkwargs)
 def compute_acceptance_fast(nu, config, gf_up, gf_dn, i, t):
     r"""Computes the Metropolis acceptance via the fast update scheme.
 
@@ -428,7 +430,7 @@ def compute_acceptance_fast(nu, config, gf_up, gf_dn, i, t):
     return min(abs(d_up * d_dn), 1.0)
 
 
-@njit(void(float64, conf_t, gmat_t, gmat_t, int64, int64), cache=True)
+@njit(void(float64, conf_t, gmat_t, gmat_t, int64, int64), **jkwargs)
 def update_greens(nu, config, gf_up, gf_dn, k, t):
     r"""Performs a Sherman-Morrison update of the Green's function.
 
@@ -489,7 +491,7 @@ def update_greens(nu, config, gf_up, gf_dn, k, t):
     gf_dn += frac_dn * tmp * gf_dn[k, :]
 
 
-@njit(void(float64, conf_t, gmat_t, gmat_t, int64, int64), cache=True)
+@njit(void(float64, conf_t, gmat_t, gmat_t, int64, int64), **jkwargs)
 def update_greens2(nu, config, gf_up, gf_dn, i, t):
     r"""Updates the Green's function via the Sherman-Morrison formula.
 
@@ -536,9 +538,12 @@ def update_greens2(nu, config, gf_up, gf_dn, i, t):
     gf_dn -= np.outer(b_dn, c_dn)
 
 
-@njit(void(bmat_t, bmat_t, gmat_t, gmat_t, int64), cache=True)
-def wrap_greens(bmats_up, bmats_dn, gf_up, gf_dn, t):
+@njit(void(bmat_t, bmat_t, gmat_t, gmat_t, int64), **jkwargs)
+def wrap_up_greens(bmats_up, bmats_dn, gf_up, gf_dn, t):
     r"""Wraps the Green's functions between the time step :math:'t' and :math:'t+1'.
+
+    This method has to be called after a time-step in order to prepare the
+    Green's function for the next hogher time slice.
 
     Parameters
     ----------
@@ -559,8 +564,36 @@ def wrap_greens(bmats_up, bmats_dn, gf_up, gf_dn, t):
     gf_dn[:, :] = np.dot(np.dot(b_dn, gf_dn), la.inv(b_dn))
 
 
+@njit(void(bmat_t, bmat_t, gmat_t, gmat_t, int64), **jkwargs)
+def wrap_down_greens(bmats_up, bmats_dn, gf_up, gf_dn, t):
+    r"""Wraps the Green's functions between the time step :math:'t' and :math:'t-1'.
+
+    This method has to be called after a time-step in order to prepare the
+    Green's function for the next lower time slice.
+
+    Parameters
+    ----------
+    bmats_up : (L, N, N) np.ndarray
+        The spin-up time step matrices.
+    bmats_dn : (L, N, N) np.ndarray
+        The spin-down time step matrices.
+    gf_up : (N, N) np.ndarray
+        The spin-up Green's function.
+    gf_dn : (N. N) np.ndarray
+        The spin-down Green's function.
+    t : int
+        The time-step index :math:'t' of the last iteration over all sites.
+    """
+    idx = t % bmats_up.shape[0]
+    b_up = bmats_up[idx]
+    b_dn = bmats_dn[idx]
+    gf_up[:, :] = np.dot(np.dot(la.inv(b_up), gf_up), b_up)
+    gf_dn[:, :] = np.dot(np.dot(la.inv(b_dn), gf_dn), b_dn)
+
+
 @njit(
-    int64(expk_t, float64, conf_t, bmat_t, bmat_t, gmat_t, gmat_t, int64[:]), cache=True
+    int64(expk_t, float64, conf_t, bmat_t, bmat_t, gmat_t, gmat_t, int64[:]),
+    **jkwargs
 )
 def iteration_fast(exp_k, nu, config, bmats_up, bmats_dn, gf_up, gf_dn, times):
     r"""Runs one iteration of the rank-1 DQMC-scheme.
@@ -608,5 +641,5 @@ def iteration_fast(exp_k, nu, config, bmats_up, bmats_dn, gf_up, gf_dn, times):
                 # Update configuration and B-matrices *after* GF update
                 update(exp_k, nu, config, bmats_up, bmats_dn, i, t)
         # Wrap Green's function between time steps
-        wrap_greens(bmats_up, bmats_dn, gf_up, gf_dn, t)
+        wrap_up_greens(bmats_up, bmats_dn, gf_up, gf_dn, t)
     return accepted
