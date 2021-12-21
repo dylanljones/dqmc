@@ -55,11 +55,19 @@ class DQMC:
         # Initialization
         self._gf_up, self._gf_dn = self.greens()
 
+        # Measurement data
+        # ----------------
+
+        self.n_up = 0
+        self.n_dn = 0
+        self.n_double = 0
+        self.local_moment = 0
+
     def recompute_greens(self):
         self._gf_up, self._gf_dn = self.greens()
 
     def greens(self):
-        return compute_greens_stable(self.bmats_up, self.bmats_dn, self.bmat_order)
+        # return compute_greens_stable(self.bmats_up, self.bmats_dn, self.bmat_order)
         try:
             return compute_greens(self.bmats_up, self.bmats_dn, self.bmat_order)
         except np.linalg.LinAlgError as e:
@@ -87,6 +95,20 @@ class DQMC:
         # Recompute Green's functions
         self.recompute_greens()
 
+    def measure(self, factor):
+        scale = 1 / factor
+
+        gf_up, gf_dn = self.get_greens()
+        n_up = 1 - np.diag(gf_up)
+        n_dn = 1 - np.diag(gf_dn)
+        n_double = n_up * n_dn
+        moment = n_up + n_dn - 2 * n_double
+
+        self.n_up += np.mean(n_up) * scale
+        self.n_dn += np.mean(n_dn) * scale
+        self.n_double += np.mean(n_double) * scale
+        self.local_moment += np.mean(moment) * scale
+
     def simulate(self, warmup, measure, callback=None, *args, **kwargs):
         sweeps = warmup + measure
         out = 0.0
@@ -100,13 +122,17 @@ class DQMC:
                 "[%s] %3d Ratio: %.2f", self.status, sweep, self.acceptance_probs[-1]
             )
             # perform measurements
-            if sweep > warmup:
+            if sweep == warmup + 1:
                 self.status = "meas"
-                gf_up, gf_dn = self.get_greens()
-                if callback is not None:
-                    out += callback(gf_up, gf_dn, *args, **kwargs)
-                else:
-                    out += np.array([gf_up, gf_dn])
+
+            if sweep > warmup:
+                self.measure(measure)
+
+                # gf_up, gf_dn = self.get_greens()
+                # if callback is not None:
+                #     out += callback(gf_up, gf_dn, *args, **kwargs)
+                # else:
+                #     out += np.array([gf_up, gf_dn])
             self.it += 1
         return out / measure
 
