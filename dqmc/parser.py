@@ -24,6 +24,7 @@ class Parameters:
     num_timesteps: int
     num_equil: int
     num_sampl: int
+    num_recomp: int
 
     @property
     def beta(self):
@@ -40,6 +41,7 @@ def parse(file):
     num_timesteps = 0
     warm = 0
     meas = 0
+    num_recomp = 0
 
     with open(file, "r") as fh:
         text = fh.read()
@@ -68,8 +70,9 @@ def parse(file):
             warm = int(val)
         elif head == "nsampl":
             meas = int(val)
+        elif head == "nrecomp":
+            num_recomp = int(val)
         else:
             logger.warning("Parameter %s of file '%s' not recognized!", head, file)
 
-    beta = dt * num_timesteps
-    return Parameters(shape, u, eps, t, mu, beta, num_timesteps, warm, meas)
+    return Parameters(shape, u, eps, t, mu, dt, num_timesteps, warm, meas, num_recomp)

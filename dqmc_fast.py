@@ -48,8 +48,8 @@ def main():
 
     # moments = build_inter_temp_array(inters, temps, model, num_timesteps, warmup,
     #                                  measure, callback=mfuncs.mz_moment)
-    # np.savez("mz2_chain.npz", moments=moments)
-    moments = np.load("mz2_chain.npz")["moments"]
+    np.savez("mz2_chain.npz", moments=moments)
+    # moments = np.load("mz2_chain.npz")["moments"]
 
     fig, ax = plt.subplots()
     ax.set_xscale("log")

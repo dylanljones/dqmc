@@ -26,7 +26,7 @@ import random
 import logging
 import numpy as np
 import numpy.linalg as la
-from scipy.linalg import inv, expm
+from scipy.linalg import expm
 from numba import njit, float64, int8, int64, void
 from numba import types as nt
 from .model import HubbardModel  # noqa: F401
@@ -60,7 +60,10 @@ def init_configuration(num_sites: int, num_timesteps: int) -> np.ndarray:
     config : (N, L) np.ndarray
         The array representing the configuration or or Hubbard-Stratonovich field.
     """
-    return rng.choice([-1, +1], size=(num_sites, num_timesteps)).astype(np.int8)
+    samples = random.choices([-1, +1], k=num_sites * num_timesteps)
+    config = np.array(samples).reshape((num_sites, num_timesteps)).astype(np.int8)
+    return config
+    # return rng.choice([-1, +1], size=(num_sites, num_timesteps)).astype(np.int8)
 
 
 def init_qmc(model, num_timesteps):
@@ -431,7 +434,7 @@ def compute_acceptance_fast(nu, config, gf_up, gf_dn, i, t):
 
 
 @njit(void(float64, conf_t, gmat_t, gmat_t, int64, int64), **jkwargs)
-def update_greens(nu, config, gf_up, gf_dn, k, t):
+def update_greens(nu, config, gf_up, gf_dn, i, t):
     r"""Performs a Sherman-Morrison update of the Green's function.
 
     Parameters
@@ -440,7 +443,7 @@ def update_greens(nu, config, gf_up, gf_dn, k, t):
         The parameter ν defined by :math:'\cosh(ν) = e^{U Δτ / 2}'
     config : (N, L) np.ndarray
         The configuration or Hubbard-Stratonovich field.
-    k : int
+    i : int
         The site index :math:'i' of the proposed spin-flip.
     t : int
         The time-step index :math:'t' of the proposed spin-flip.
@@ -469,26 +472,26 @@ def update_greens(nu, config, gf_up, gf_dn, k, t):
     num_sites = config.shape[0]
 
     # Compute alphas
-    arg = -2 * nu * config[k, t]
+    arg = -2 * nu * config[i, t]
     alpha_up = np.expm1(UP * arg)
     alpha_dn = np.expm1(DN * arg)
     # Compute acceptance ratios
-    d_up = 1 + alpha_up * (1 - gf_up[k, k])
-    d_dn = 1 + alpha_dn * (1 - gf_dn[k, k])
+    d_up = 1 + alpha_up * (1 - gf_up[i, i])
+    d_dn = 1 + alpha_dn * (1 - gf_dn[i, i])
     # Compute fractions
     frac_up = alpha_up / d_up
     frac_dn = alpha_dn / d_dn
 
     # Compute update to Green's functions
     idel = np.zeros(num_sites)
-    idel[k] = 1.
+    idel[i] = 1.
 
     tmp = np.zeros((num_sites, 1))
-    tmp[:, 0] = gf_up[:, k] - idel
-    gf_up += frac_up * tmp * gf_up[k, :]
+    tmp[:, 0] = gf_up[:, i] - idel
+    gf_up += frac_up * tmp * gf_up[i, :]
 
-    tmp[:, 0] = gf_dn[:, k] - idel
-    gf_dn += frac_dn * tmp * gf_dn[k, :]
+    tmp[:, 0] = gf_dn[:, i] - idel
+    gf_dn += frac_dn * tmp * gf_dn[i, :]
 
 
 @njit(void(float64, conf_t, gmat_t, gmat_t, int64, int64), **jkwargs)
@@ -626,20 +629,34 @@ def iteration_fast(exp_k, nu, config, bmats_up, bmats_dn, gf_up, gf_dn, times):
     sites = np.arange(config.shape[0])
     # Iterate over all time-steps
     for t in times:
+        # Wrap Green's function between time steps
+        wrap_up_greens(bmats_up, bmats_dn, gf_up, gf_dn, t)
+
         # Iterate over all lattice sites randomly
         np.random.shuffle(sites)
         for i in sites:
-            # Propose update by flipping spin in confguration
-            d = compute_acceptance_fast(nu, config, gf_up, gf_dn, i, t)
+            # Propose spin-flip in confguration
+            # ---------------------------------
+            arg = -2 * nu * config[i, t]
+            alpha_up = np.expm1(UP * arg)
+            alpha_dn = np.expm1(DN * arg)
+            d_up = 1 + (1 - gf_up[i, i]) * alpha_up
+            d_dn = 1 + (1 - gf_dn[i, i]) * alpha_dn
+
             # Check if move is accepted
-            r = random.random()
-            if r < d / (d + 1):
+            if random.random() < abs(d_up * d_dn):
                 # Move accepted
                 accepted += 1
+
                 # Update Green's functions *before* updating configuration
+                # --------------------------------------------------------
                 update_greens(nu, config, gf_up, gf_dn, i, t)
-                # Update configuration and B-matrices *after* GF update
-                update(exp_k, nu, config, bmats_up, bmats_dn, i, t)
-        # Wrap Green's function between time steps
-        wrap_up_greens(bmats_up, bmats_dn, gf_up, gf_dn, t)
+
+                # Actually update configuration and B-matrices *after* GF update
+                # --------------------------------------------------------------
+                config[i, t] = -config[i, t]
+                # update_timestep_mats(exp_k, nu, config, bmats_up, bmats_dn, t)
+
+        update_timestep_mats(exp_k, nu, config, bmats_up, bmats_dn, t)
+
     return accepted

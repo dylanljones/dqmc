@@ -3,8 +3,10 @@
 # This code is part of dqmc.
 #
 # Copyright (c) 2021, Dylan Jones
+
 import logging
 import random
+import time
 from dqmc import hubbard_hypercube
 from dqmc.simulator import DQMC
 from dqmc.parser import parse
@@ -15,7 +17,21 @@ logger.setLevel(logging.DEBUG)
 
 
 def pformat_parameters(p):
-    pass
+    line = "_" * 60
+    s = line + "\n"
+    s += "Simulation parameters\n\n"
+    s += f"            Shape: {p.shape}\n"
+    s += f"                u: {p.u}\n"
+    s += f"              eps: {p.eps}\n"
+    s += f"                t: {p.t}\n"
+    s += f"               mu: {p.mu}\n"
+    s += f"             beta: {p.beta}\n"
+    s += f"        time-step: {p.dt}\n"
+    s += f"                L: {p.num_timesteps}\n"
+    s += f"           nequil: {p.num_equil}\n"
+    s += f"           nsampl: {p.num_sampl}\n"
+    s += f"          nrecomp: {p.num_recomp}\n"
+    return s
 
 
 def pformat_results(n_up, n_dn, n_double, local_moment):
@@ -32,16 +48,19 @@ def pformat_results(n_up, n_dn, n_double, local_moment):
 
 def main():
     p = parse("sample_chain.txt")
-
     model = hubbard_hypercube(p.shape, p.u, p.eps, p.t, p.mu, p.beta)
 
-    seed = random.randint(0, 100_000_000)
+    seed = 0  # random.randint(0, 100_000_000)
     print("Random seed:", seed)
-    print(p)
+    print(pformat_parameters(p))
 
-    sim = DQMC(model, p.num_timesteps, seed=seed)
+    t0 = time.perf_counter()
+    print("Starting DQMC simulation...")
+    sim = DQMC(model, p.num_timesteps, num_recomp=p.num_recomp, seed=seed)
     sim.simulate(p.num_equil, p.num_sampl)
 
+    print(f"{p.num_equil + p.num_sampl} iterations completed!")
+    print(f"CPU time: {time.perf_counter() - t0:.2f}s")
     print(pformat_results(sim.n_up, sim.n_dn, sim.n_double, sim.local_moment))
 
 
