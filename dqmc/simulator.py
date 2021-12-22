@@ -24,8 +24,7 @@ logger = logging.getLogger("dqmc")
 class DQMC:
     """Main DQMC simulator instance."""
 
-    def __init__(self, model, num_timesteps, num_recomp=1, seed=None,
-                 time_dir=+1, bmat_dir=None):
+    def __init__(self, model, num_timesteps, num_recomp=1, seed=None):
         if seed is None:
             seed = 0
         random.seed(seed)
@@ -36,14 +35,8 @@ class DQMC:
         # Init QMC variables
         self.exp_k, self.nu, self.config = init_qmc(model, num_timesteps)
 
-        # Set up time direction and order of inner loops
-        if bmat_dir is None:
-            # Default B-matrix direction is the reverse of the time direction
-            bmat_dir = -time_dir
-
-        self.bmat_order = np.arange(self.config.shape[1], dtype=np.int64)[::bmat_dir]
+        self.bmat_order = np.arange(self.config.shape[1], dtype=np.int64)[::-1]
         # self.bmat_order = np.roll(self.bmat_order, 1)
-        self.times = np.arange(self.config.shape[1], dtype=np.int64)[::time_dir]
 
         # Pre-compute time flow matrices
         self.bmats_up, self.bmats_dn = compute_timestep_mats(
@@ -90,7 +83,6 @@ class DQMC:
             self.bmats_dn,
             self._gf_up,
             self._gf_dn,
-            self.times,
         )
         # Compute and save acceptance ratio
         acc_ratio = accepted / self.config.size
@@ -143,32 +135,6 @@ class DQMC:
             raise ValueError("Number of sweeps not a multiple of `num_recomp`!")
         self.warmup(warmup)
         return self.measure(measure, callback, *args, **kwargs)
-
-        sweeps = warmup + measure
-        out = 0.0
-        # Run sweeps
-        self.it = 0
-        self.status = "warm"
-        for sweep in range(sweeps):
-            # print("It")
-            self.iteration()
-            logger.debug(
-                "[%s] %3d Ratio: %.2f", self.status, sweep, self.acceptance_probs[-1]
-            )
-            # perform measurements
-            if sweep == warmup + 1:
-                self.status = "meas"
-
-            if sweep > warmup:
-                self.accumulate_measurements(measure)
-
-                # gf_up, gf_dn = self.get_greens()
-                # if callback is not None:
-                #     out += callback(gf_up, gf_dn, *args, **kwargs)
-                # else:
-                #     out += np.array([gf_up, gf_dn])
-            self.it += 1
-        return out / measure
 
 
 def run_dqmc(shape, u, eps, hop, mu, beta, num_timesteps, warmup, measure, callback):

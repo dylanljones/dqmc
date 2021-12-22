@@ -130,11 +130,11 @@ def test_compute_timeflow_map(u, mu, beta):
     # Spin up
     expected = reduce(np.dot, bmats_up[order])
     result = dqmc.compute_timeflow_map(bmats_up, order)
-    assert_array_equal(expected, result)
+    assert_array_almost_equal(expected, result)
     # Spin down
     expected = reduce(np.dot, bmats_dn[order])
     result = dqmc.compute_timeflow_map(bmats_dn, order)
-    assert_array_equal(expected, result)
+    assert_array_almost_equal(expected, result)
 
 
 @given(st.integers(1, 5), st.integers(1, 5), st.integers(0, 9), st.integers(0, 99))
@@ -169,7 +169,7 @@ def test_compute_acceptance_fast(u, beta, i, t):
     exp_k, nu, config = dqmc.init_qmc(model, num_timesteps)
     bmats_up, bmats_dn = dqmc.compute_timestep_mats(exp_k, nu, config)
 
-    order = np.arange(num_timesteps)[::-1]
+    order = np.arange(num_timesteps)[::-1].astype(np.int64)
     order = np.roll(order, t)
     gf_up, gf_dn = dqmc.compute_greens(bmats_up, bmats_dn, order)
 
@@ -237,7 +237,7 @@ def test_wrap_greens(u, beta, t):
     bmats_up, bmats_dn = dqmc.compute_timestep_mats(exp_k, nu, config)
 
     # Compute Green's function of time slice `t`
-    order = np.arange(num_timesteps)[::-1]
+    order = np.arange(num_timesteps)[::-1].astype(np.int64)
     order = np.roll(order, t)
     gf_up, gf_dn = dqmc.compute_greens(bmats_up, bmats_dn, order)
 

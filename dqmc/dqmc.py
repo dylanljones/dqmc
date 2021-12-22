@@ -594,11 +594,8 @@ def wrap_down_greens(bmats_up, bmats_dn, gf_up, gf_dn, t):
     gf_dn[:, :] = np.dot(np.dot(la.inv(b_dn), gf_dn), b_dn)
 
 
-@njit(
-    int64(expk_t, float64, conf_t, bmat_t, bmat_t, gmat_t, gmat_t, int64[:]),
-    **jkwargs
-)
-def iteration_fast(exp_k, nu, config, bmats_up, bmats_dn, gf_up, gf_dn, times):
+@njit(int64(expk_t, float64, conf_t, bmat_t, bmat_t, gmat_t, gmat_t), **jkwargs)
+def iteration_fast(exp_k, nu, config, bmats_up, bmats_dn, gf_up, gf_dn):
     r"""Runs one iteration of the rank-1 DQMC-scheme.
 
     Parameters
@@ -617,8 +614,6 @@ def iteration_fast(exp_k, nu, config, bmats_up, bmats_dn, gf_up, gf_dn, times):
         The spin-up Green's function.
     gf_dn : (N. N) np.ndarray
         The spin-down Green's function.
-    times : (L,) np.ndarray
-        An array of time indices.
 
     Returns
     -------
@@ -628,7 +623,7 @@ def iteration_fast(exp_k, nu, config, bmats_up, bmats_dn, gf_up, gf_dn, times):
     accepted = 0
     sites = np.arange(config.shape[0])
     # Iterate over all time-steps
-    for t in times:
+    for t in range(config.shape[1]):
         # Wrap Green's function between time steps
         wrap_up_greens(bmats_up, bmats_dn, gf_up, gf_dn, t)
 

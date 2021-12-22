@@ -156,7 +156,7 @@ def asvqrd_prod(matrices):
     # Compute T = D^{-1} R P
     t = np.dot(np.linalg.inv(d), np.dot(r, p))
     tmats[0] = t
-
+    t_prod = t
     for j in range(1, len(matrices)):
         tmp = np.dot(np.dot(matrices[j], q), d)
         q, r, p = qrp(tmp)
@@ -165,9 +165,9 @@ def asvqrd_prod(matrices):
         # Compute T = D^{-1} R P
         t = np.dot(np.linalg.inv(d), np.dot(r, p))
         tmats[j] = t
-
+        t_prod = np.dot(t, t_prod)
     # Compute product of T = T_L ... T_2 T_1
-    t = mdot(tmats[::-1])
+    t = t_prod
 
     # Compute matrices D_b and D_s, such that D_L = D_b D_s
     diag = np.diag(d)
@@ -182,6 +182,6 @@ def asvqrd_prod(matrices):
 
     db_inv = la.inv(db)
     qt = q.T
-    # calculate (D_b^{-1} Q^T + D_s T)^{-1}  (D_b^{-1} Q^T)
+    # calculate (D_b^{-1} Q^T + D_s T)^{-1} (D_b^{-1} Q^T)
     rec = np.dot(la.inv(np.dot(db_inv, qt) + np.dot(ds, t)), np.dot(db_inv, qt))
     return rec
