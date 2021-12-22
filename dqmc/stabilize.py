@@ -6,7 +6,6 @@
 
 import numpy as np
 from scipy import linalg as la
-from abc import ABC, abstractmethod
 
 
 def mdot(*arrays):
@@ -106,3 +105,83 @@ def compute_greens_stable(bmats_up, bmats_dn, order):
     gf_up = la.inv(m_up)
     gf_dn = la.inv(m_dn)
     return np.ascontiguousarray(gf_up), np.ascontiguousarray(gf_dn)
+
+
+# =========================================================================
+# UDR decomposition
+# =========================================================================
+
+
+def qrp(arr):
+    # Compute QR decomposition
+    q, r, pvec = la.qr(arr, mode="full", pivoting=True)
+    # Build permutation matrix as result of the column pivoting
+    p = np.zeros_like(q)
+    p[np.arange(len(arr)), pvec] = 1.
+    return q, r, p
+
+
+def column_stratified_matrix_prod(matrices):
+    # Array of matrices T_i
+    tmats = np.zeros_like(matrices)
+
+    # Compute QR decomposition with pivoting
+    q, r, p = qrp(matrices[0])
+    # Compute diagonal matrix D = diag(R)
+    d = np.diag(np.diag(r))
+    # Compute T = D^{-1} R P
+    t = np.dot(np.linalg.inv(d), np.dot(r, p))
+    tmats[0] = t
+
+    for j in range(1, len(matrices)):
+        tmp = np.dot(np.dot(matrices[j], q), d)
+        q, r, p = qrp(tmp)
+        # Compute diagonal matrix D = diag(R)
+        d = np.diag(np.diag(r))
+        # Compute T = D^{-1} R P
+        t = np.dot(np.linalg.inv(d), np.dot(r, p))
+        tmats[j] = t
+
+    return np.dot(np.dot(q, d), mdot(tmats[::-1]))
+
+
+def asvqrd_prod(matrices):
+    # Array of matrices T_i
+    tmats = np.zeros_like(matrices)
+
+    # Compute QR decomposition with pivoting
+    q, r, p = qrp(matrices[0])
+    # Compute diagonal matrix D = diag(R)
+    d = np.diag(np.diag(r))
+    # Compute T = D^{-1} R P
+    t = np.dot(np.linalg.inv(d), np.dot(r, p))
+    tmats[0] = t
+
+    for j in range(1, len(matrices)):
+        tmp = np.dot(np.dot(matrices[j], q), d)
+        q, r, p = qrp(tmp)
+        # Compute diagonal matrix D = diag(R)
+        d = np.diag(np.diag(r))
+        # Compute T = D^{-1} R P
+        t = np.dot(np.linalg.inv(d), np.dot(r, p))
+        tmats[j] = t
+
+    # Compute product of T = T_L ... T_2 T_1
+    t = mdot(tmats[::-1])
+
+    # Compute matrices D_b and D_s, such that D_L = D_b D_s
+    diag = np.diag(d)
+    db = np.eye(len(d))
+    ds = np.eye(len(d))
+    for i in range(len(d)):
+        absdiag = abs(diag[i])
+        if absdiag > 1:
+            db[i, i] = diag[i]
+        else:
+            ds[i, i] = diag[i]
+
+    db_inv = la.inv(db)
+    qt = q.T
+    # calculate (D_b^{-1} Q^T + D_s T)^{-1}  (D_b^{-1} Q^T)
+    rec = np.dot(la.inv(np.dot(db_inv, qt) + np.dot(ds, t)), np.dot(db_inv, qt))
+    return rec
