@@ -4,50 +4,70 @@
 #
 # Copyright (c) 2021, Dylan Jones
 
+import sys
+import time
 import logging
-import numpy as np
-import matplotlib.pyplot as plt
-from dqmc import DQMC, hubbard_hypercube, mfuncs
+from dqmc import hubbard_hypercube
+from dqmc.simulator import DQMC
+from dqmc.parser import parse
+
 
 logger = logging.getLogger("dqmc")
 logger.setLevel(logging.INFO)
 
 
-def plot_acceptance_probs(probs, warmup):
-    fig, ax = plt.subplots()
-    ax.plot(probs)
-    ax.grid()
-    ax.set_ylim(-0.01, 1.01)
-    ax.set_xlim(0, None)
-    ax.set_xlabel("Seeep")
-    ax.set_ylabel("Ratio")
-    ax.axvline(x=warmup, color="r", ls="--")
+def pformat_parameters(p):
+    line = "_" * 60
+    s = line + "\n"
+    s += "Simulation parameters\n\n"
+    s += f"            Shape: {p.shape}\n"
+    s += f"                u: {p.u}\n"
+    s += f"              eps: {p.eps}\n"
+    s += f"                t: {p.t}\n"
+    s += f"               mu: {p.mu}\n"
+    s += f"             beta: {p.beta}\n"
+    s += f"        time-step: {p.dt}\n"
+    s += f"                L: {p.num_timesteps}\n"
+    s += f"           nequil: {p.num_equil}\n"
+    s += f"           nsampl: {p.num_sampl}\n"
+    s += f"          nrecomp: {p.num_recomp}\n"
+    return s
 
 
-def run_dqmc(num_sites, num_timesteps, u, temp, mu=0., hop=1., warmup=500, measure=2000,
-             callback=None):
-    model = hubbard_hypercube(num_sites, u=u, mu=mu, hop=hop, beta=1 / temp, periodic=True)
-    dqmc = DQMC(model, num_timesteps)
-    return dqmc.simulate(warmup, measure, callback), dqmc.acceptance_probs
-
-
-def pformat_result(value, error, dec=5):
-    return f"{value:.{dec}f}±{error:.{dec}f}"
+def pformat_results(n_up, n_dn, n_double, local_moment):
+    line = "_" * 60
+    s = line + "\n"
+    s += "Simulation results\n\n"
+    s += f"     Total density: {n_up + n_dn:8.4f}\n"
+    s += f"   Spin-up density: {n_up:8.4f}\n"
+    s += f" Spin-down density: {n_dn:8.4f}\n"
+    s += f"  Double occupancy: {n_double:8.4f}\n"
+    s += f"      Local moment: {local_moment:8.4f}\n"
+    return s
 
 
 def main():
-    num_sites = 10
-    num_timesteps = 100
-    warmup = 500
-    measure = 3000
-    u, mu, hop = 4.0, 0.0, 1.0
-    temp = 10
+    args = sys.argv[1:]
+    if len(args):
+        file = args[0]
+    else:
+        file = "sample_chain.txt"
 
-    res, probs = run_dqmc(num_sites, num_timesteps, u, temp, mu, hop, warmup, measure, mfuncs.mz_moment)
-    print(res)
-    print(pformat_result(np.mean(res), np.std(res), dec=4))
-    plot_acceptance_probs(probs, warmup)
-    plt.show()
+    p = parse(file)
+    model = hubbard_hypercube(p.shape, p.u, p.eps, p.t, p.mu, p.beta)
+
+    seed = 0  # random.randint(0, 100_000_000)
+    print("Random seed:", seed)
+    print(pformat_parameters(p))
+
+    t0 = time.perf_counter()
+    print("Starting DQMC simulation...")
+    sim = DQMC(model, p.num_timesteps, num_recomp=p.num_recomp, seed=seed)
+    sim.simulate(p.num_equil, p.num_sampl)
+
+    print(f"{p.num_equil + p.num_sampl} iterations completed!")
+    print(f"CPU time: {time.perf_counter() - t0:.2f}s")
+    print(pformat_results(sim.n_up, sim.n_dn, sim.n_double, sim.local_moment))
 
 
 if __name__ == "__main__":

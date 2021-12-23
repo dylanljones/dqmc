@@ -36,7 +36,6 @@ class DQMC:
         self.exp_k, self.nu, self.config = init_qmc(model, num_timesteps)
 
         self.bmat_order = np.arange(self.config.shape[1], dtype=np.int64)[::-1]
-        # self.bmat_order = np.roll(self.bmat_order, 1)
 
         # Pre-compute time flow matrices
         self.bmats_up, self.bmats_dn = compute_timestep_mats(
