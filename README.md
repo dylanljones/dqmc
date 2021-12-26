@@ -6,7 +6,8 @@
 
 Determinant Quantum Monte Carlo simulations of the Hubbard model in Python.
 
-> :warning: **WARNING** This project is still under development and might contain errors or change significantly in the future!
+| :warning: **WARNING**: This project is still under development and might contain errors or change significantly in the future! |
+| --- |
 
 ## Installation
 
