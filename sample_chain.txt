@@ -6,5 +6,6 @@ mu          2
 dt          0.05
 L           40
 nequil      512
-nsampl      512
+nsampl      2048
 nrecomp     8
+prodLen     8

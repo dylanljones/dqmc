@@ -10,12 +10,10 @@
 
 """Main DQMC simulator object, see `dqmc` for implementation of the DQMC methods."""
 
-import random
 import logging
 import numpy as np
 from .model import hubbard_hypercube
 from .dqmc import init_qmc, compute_timestep_mats, compute_greens, iteration_fast
-from .stabilize import compute_greens_stable
 from .mp import run_parallel, prun_parallel
 
 logger = logging.getLogger("dqmc")
@@ -24,18 +22,17 @@ logger = logging.getLogger("dqmc")
 class DQMC:
     """Main DQMC simulator instance."""
 
-    def __init__(self, model, num_timesteps, num_recomp=1, seed=None):
+    def __init__(self, model, num_timesteps, num_recomp=1, prod_len=1, seed=None):
         if seed is None:
             seed = 0
-        random.seed(seed)
+        # random.seed(seed)
 
         self.num_recomp = num_recomp
+        self.prod_len = prod_len
 
         self.model = model
         # Init QMC variables
-        self.exp_k, self.nu, self.config = init_qmc(model, num_timesteps)
-
-        self.bmat_order = np.arange(self.config.shape[1], dtype=np.int64)[::-1]
+        self.exp_k, self.nu, self.config = init_qmc(model, num_timesteps, seed)
 
         # Pre-compute time flow matrices
         self.bmats_up, self.bmats_dn = compute_timestep_mats(
@@ -52,23 +49,18 @@ class DQMC:
 
         # Measurement data
         # ----------------
-
-        self.n_up = 0
-        self.n_dn = 0
-        self.n_double = 0
-        self.local_moment = 0
+        num_sites = self.config.shape[0]
+        self.n_up = np.zeros(num_sites, dtype=np.float64)
+        self.n_dn = np.zeros(num_sites, dtype=np.float64)
+        self.n_double = np.zeros(num_sites, dtype=np.float64)
+        self.local_moment = np.zeros(num_sites, dtype=np.float64)
 
     def recompute_greens(self):
         self._gf_up, self._gf_dn = self.greens()
 
     def greens(self):
-        # return compute_greens_stable(self.bmats_up, self.bmats_dn, self.bmat_order)
-        try:
-            return compute_greens(self.bmats_up, self.bmats_dn, self.bmat_order)
-        except np.linalg.LinAlgError as e:
-            logger.warning("Error in iteration %s", self.it)
-            logger.warning(e)
-            return compute_greens_stable(self.bmats_up, self.bmats_dn, self.bmat_order)
+        return compute_greens(self.bmats_up, self.bmats_dn, 0)
+        # return compute_greens_stable(self.bmats_up, self.bmats_dn, self.prod_len)
 
     def get_greens(self):
         return self._gf_up, self._gf_dn
@@ -82,6 +74,7 @@ class DQMC:
             self.bmats_dn,
             self._gf_up,
             self._gf_dn,
+            self.num_recomp
         )
         # Compute and save acceptance ratio
         acc_ratio = accepted / self.config.size
@@ -89,12 +82,20 @@ class DQMC:
         logger.debug("[%s] %3d Ratio: %.2f", self.status, self.it, acc_ratio)
 
         # Recompute Green's functions
-        if self.it % self.num_recomp == 0:
-            logger.debug("Recomputing GF")
-            self.recompute_greens()
+        # if self.it % self.num_recomp == 0:
+        #    logger.debug("Recomputing GF")
+        self.recompute_greens()
 
-    def accumulate_measurements(self, factor):
-        scale = 1 / factor
+    def accumulate_measurements(self, num_measurements):
+        # accumulate_measurements(self._gf_up,
+        #                         self._gf_dn,
+        #                         num_measurements,
+        #                         self.n_up,
+        #                         self.n_dn,
+        #                         self.n_double,
+        #                         self.local_moment)
+        # return
+        scale = 1 / num_measurements
 
         gf_up, gf_dn = self.get_greens()
         n_up = 1 - np.diag(gf_up)
@@ -102,13 +103,13 @@ class DQMC:
         n_double = n_up * n_dn
         moment = n_up + n_dn - 2 * n_double
 
-        self.n_up += np.mean(n_up) * scale
-        self.n_dn += np.mean(n_dn) * scale
-        self.n_double += np.mean(n_double) * scale
-        self.local_moment += np.mean(moment) * scale
+        self.n_up += n_up * scale
+        self.n_dn += n_dn * scale
+        self.n_double += n_double * scale
+        self.local_moment += moment * scale
 
     def warmup(self, sweeps):
-        self.it = 0
+        self.it = sweeps
         self.status = "warm"
         for sweep in range(sweeps):
             self.iteration()

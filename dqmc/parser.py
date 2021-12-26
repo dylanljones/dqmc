@@ -25,6 +25,8 @@ class Parameters:
     num_equil: int
     num_sampl: int
     num_recomp: int
+    prod_len: int = 1
+    seed: int = 0
 
     @property
     def beta(self):
@@ -42,7 +44,9 @@ def parse(file):
     warm = 0
     meas = 0
     num_recomp = 0
+    prod_len = 1
 
+    logger.info("Reading file %s...", file)
     with open(file, "r") as fh:
         text = fh.read()
     lines = text.splitlines(keepends=False)
@@ -72,7 +76,10 @@ def parse(file):
             meas = int(val)
         elif head == "nrecomp":
             num_recomp = int(val)
+        elif head == "prodlen":
+            prod_len = int(val)
         else:
             logger.warning("Parameter %s of file '%s' not recognized!", head, file)
 
-    return Parameters(shape, u, eps, t, mu, dt, num_timesteps, warm, meas, num_recomp)
+    return Parameters(shape, u, eps, t, mu, dt, num_timesteps, warm, meas,
+                      num_recomp, prod_len)

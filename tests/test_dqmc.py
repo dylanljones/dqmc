@@ -199,11 +199,11 @@ def test_compute_greens():
     pass
 
 
-@given(st.integers(1, 5), st.integers(1, 5), st.integers(0, 9))
+@given(st.floats(1, 10), st.floats(0.1, 10), st.integers(0, 9))
 def test_update_greens(u, beta, i):
     num_sites = 10
     num_timesteps = 100
-    eps, mu, hop = 0.0, 0.0, 1.0
+    eps, mu, hop = 0.0, u/2, 1.0
     assume(u * hop * (beta / num_timesteps)**2 < 0.1)
 
     t = 0  # Only use first time slice to prevent need for wrapping
@@ -223,6 +223,33 @@ def test_update_greens(u, beta, i):
 
     assert_array_almost_equal(gf_up, gf_up_ref, decimal=5)
     assert_array_almost_equal(gf_dn, gf_dn_ref, decimal=5)
+
+
+@given(st.floats(1, 10), st.floats(0.1, 10), st.integers(0, 9))
+def test_update_greens_blas(u, beta, i):
+    num_sites = 10
+    num_timesteps = 100
+    eps, mu, hop = 0.0, u/2, 1.0
+    assume(u * hop * (beta / num_timesteps)**2 < 0.1)
+
+    t = 0  # Only use first time slice to prevent need for wrapping
+
+    model = hubbard_hypercube(num_sites, u, eps, hop, mu, beta, periodic=True)
+    exp_k, nu, config = dqmc.init_qmc(model, num_timesteps)
+    bmats_up, bmats_dn = dqmc.compute_timestep_mats(exp_k, nu, config)
+
+    bmat_order = np.arange(config.shape[1], dtype=np.int64)[::-1]
+    gf_up, gf_dn = dqmc.compute_greens(bmats_up, bmats_dn, bmat_order)
+
+    # -----------Update Green's function --------------
+    dqmc.update_greens_blas(nu, config, gf_up, gf_dn, i, t)
+    # -------------------------------------------------
+    dqmc.update(exp_k, nu, config, bmats_up, bmats_dn, i, t)
+    # bmats_up, bmats_dn = dqmc.compute_timestep_mats(exp_k, nu, config)
+    gf_up_ref, gf_dn_ref = dqmc.compute_greens(bmats_up, bmats_dn, bmat_order)
+
+    assert_array_almost_equal(gf_up, gf_up_ref, decimal=8)
+    assert_array_almost_equal(gf_dn, gf_dn_ref, decimal=8)
 
 
 @given(st.integers(1, 5), st.integers(1, 5), st.integers(0, 99))
