@@ -12,7 +12,7 @@ Determinant Quantum Monte Carlo simulations of the Hubbard model in Python.
 
 Install via `pip` from github:
 ```commandline
-pip install git+git://github.com/dylanljones/cmpy.git@VERSION
+pip install git+https://github.com/dylanljones/dqmc.git@VERSION
 ```
 or download/clone the package, navigate to the root directory and install via
 ````commandline
@@ -23,11 +23,46 @@ or the `setup.py` script
 python setup.py install
 ````
 
+
+## Quickstart
+
+To run a simulation, run the `main.py` script with a configuration text file
+as parameter, for example:
+````commandline
+python main.py examples/chain.txt
+````
+
+### Parameters
+
+- `shape`
+   The shape of the lattice model.
+- `U`
+   The interaction strength of the Hubbard model.
+- `eps`
+   The on-site energy of the Hubbard model.
+- `t`
+   The hopping energy of the Hubbard model.
+- `mu`
+   The chemical potential of the Hubbard model. Set to `U/2` for half filling.
+- `dt`
+   The imaginary time step size.
+- `L`
+   The number of imaginary time slices
+- `nequil`
+   The number of warmup-sweeps
+- `nsampl`
+   The number of measurement-sweeps
+- `nrecomp`
+   The number of time slice wraps after which the Green's functions are recomputed
+- `prodLen`
+   The number of explicit matrix products used for the stabilized matrix product
+   via ASvQRD
+
 ## Usage
 
 ### Initializing the Hubbard model
 
-In order to run a simulation, a Hubbard model has to be constructed. This can be 
+In order to run a simulation, a Hubbard model has to be constructed. This can be
 done manually by initializing the included `HubbardModel`:
 ```python
 import numpy as np
@@ -43,8 +78,8 @@ model.add_connections(1)
 # Build the lattice with periodic boundary conditions along both axis
 model.build((5, 5), relative=True, periodic=(0, 1))
 ```
-or by using the helper function `hubbard_hypercube` to construct a `d`-dimensional 
-hyper-rectangular Hubbard model with one atom in the unit cell and nearest neighbor 
+or by using the helper function `hubbard_hypercube` to construct a `d`-dimensional
+hyper-rectangular Hubbard model with one atom in the unit cell and nearest neighbor
 hopping:
 ```python
 from dqmc import hubbard_hypercube
@@ -56,8 +91,8 @@ Setting `periodic=True` marks all axis as periodic.
 
 ### Running simulations and measuring observables
 
-To run a Determinant Quantum Monte carlo simulation the `DQMC`-object can be used. 
-This is a wrapper of the main DQMC methods, which are contained in `dqmc/dqmc.py` 
+To run a Determinant Quantum Monte carlo simulation the `DQMC`-object can be used.
+This is a wrapper of the main DQMC methods, which are contained in `dqmc/dqmc.py`
 and use jit (just in time compilation) to improve performance:
 ```python
 from dqmc import hubbard_hypercube, mfuncs, DQMC
@@ -70,14 +105,14 @@ model = hubbard_hypercube(shape, u=4., eps=0., hop=1., mu=0., beta=1/5, periodic
 dqmc = DQMC(model, num_timesteps)
 results = dqmc.simulate(warmup, measure, callback=mfuncs.occupation)
 ```
-The `simulate`-method has a `callback` parameter for measuring observables, which 
+The `simulate`-method has a `callback` parameter for measuring observables, which
 expects a method of the form
 ```python
 def callback(gf_up, gf_dn):
     ...
     return result
 ```
-The returned result must be a `np.ndarray` for ensuring correct averaging after the 
+The returned result must be a `np.ndarray` for ensuring correct averaging after the
 measurement sweeps. If no callback is given the local Green's function `G_{ij}` is
 measured by default. A collection of methods for measuring observables is contained
 in the `mfuncs` module.
@@ -92,7 +127,7 @@ beta = 1.0
 num_timesteps = 100
 warmup, measure = 300, 3000
 
-res = run_dqmc(shape, u, eps, hop, mu, beta, num_timesteps, 
+res = run_dqmc(shape, u, eps, hop, mu, beta, num_timesteps,
                warmup, measure, mfuncs.occupation)
 ```
 

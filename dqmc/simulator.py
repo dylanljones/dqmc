@@ -14,6 +14,7 @@ import logging
 import numpy as np
 from .model import hubbard_hypercube
 from .dqmc import init_qmc, compute_timestep_mats, compute_greens, iteration_fast
+from .dqmc import recompute_greens_stable
 from .mp import run_parallel, prun_parallel
 
 logger = logging.getLogger("dqmc")
@@ -23,6 +24,11 @@ class DQMC:
     """Main DQMC simulator instance."""
 
     def __init__(self, model, num_timesteps, num_recomp=1, prod_len=1, seed=None):
+        if num_timesteps % prod_len != 0:
+            raise ValueError("Number of time steps not a multiple of `prod_len`!")
+        if num_timesteps % num_recomp != 0:
+            raise ValueError("Number of time steps not a multiple of `num_recomp`!")
+
         if seed is None:
             seed = 0
         # random.seed(seed)
@@ -55,15 +61,16 @@ class DQMC:
         self.n_double = np.zeros(num_sites, dtype=np.float64)
         self.local_moment = np.zeros(num_sites, dtype=np.float64)
 
-    def recompute_greens(self):
-        self._gf_up, self._gf_dn = self.greens()
-
     def greens(self):
         return compute_greens(self.bmats_up, self.bmats_dn, 0)
         # return compute_greens_stable(self.bmats_up, self.bmats_dn, self.prod_len)
 
     def get_greens(self):
         return self._gf_up, self._gf_dn
+
+    def recompute_greens(self):
+        recompute_greens_stable(self.bmats_up, self.bmats_dn, self._gf_up, self._gf_dn,
+                                self.prod_len)
 
     def iteration(self):
         accepted = iteration_fast(
@@ -84,7 +91,7 @@ class DQMC:
         # Recompute Green's functions
         # if self.it % self.num_recomp == 0:
         #    logger.debug("Recomputing GF")
-        self.recompute_greens()
+        # self.recompute_greens()
 
     def accumulate_measurements(self, num_measurements):
         # accumulate_measurements(self._gf_up,
@@ -120,7 +127,7 @@ class DQMC:
         self.status = "meas"
         for sweep in range(sweeps):
             self.iteration()
-
+            self.recompute_greens()
             # perform measurements
             self.accumulate_measurements(sweeps)
             # user measurement callback
@@ -131,8 +138,6 @@ class DQMC:
             self.it += 1
 
     def simulate(self, warmup, measure, callback=None, *args, **kwargs):
-        if (warmup + measure) % self.num_recomp != 0:
-            raise ValueError("Number of sweeps not a multiple of `num_recomp`!")
         self.warmup(warmup)
         return self.measure(measure, callback, *args, **kwargs)
 

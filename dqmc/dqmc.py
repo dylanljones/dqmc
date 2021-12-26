@@ -218,8 +218,7 @@ def update_timestep_mats(exp_k, nu, config, bmats_up, bmats_dn, t):
     bmats_dn[t] = compute_timestep_mat(exp_k, nu, config, t, sigma=DN)
 
 
-@njit(nt.UniTuple(float64[:, :], 2)(bmat_t, bmat_t, int64),
-      nogil=True, fastmath=True, cache=True)
+@njit(nt.UniTuple(float64[:, :], 2)(bmat_t, bmat_t, int64), **jkwargs)
 def compute_m_matrices(bmats_up, bmats_dn, t):
     r"""Computes the matrix :math:'M_σ = I + A_σ(h)' for both spins.
 
@@ -258,7 +257,7 @@ def compute_m_matrices(bmats_up, bmats_dn, t):
     return m_up, m_dn
 
 
-@njit(nt.UniTuple(gmat_t, 2)(bmat_t, bmat_t, int64), cache=True)
+@njit(nt.UniTuple(gmat_t, 2)(bmat_t, bmat_t, int64), **jkwargs)
 def compute_greens(bmats_up, bmats_dn, t):
     r"""Computes the Green's functions for both spins.
 
@@ -284,6 +283,13 @@ def compute_greens(bmats_up, bmats_dn, t):
     return np.ascontiguousarray(gf_up), np.ascontiguousarray(gf_dn)
 
 
+@njit((bmat_t, bmat_t, gmat_t, gmat_t, int64), **jkwargs)
+def recompute_greens(bmats_up, bmats_dn, gf_up, gf_dn, t):
+    m_up, m_dn = compute_m_matrices(bmats_up, bmats_dn, t)
+    gf_up[:, :] = np.ascontiguousarray(np.linalg.inv(m_up))
+    gf_dn[:, :] = np.ascontiguousarray(np.linalg.inv(m_dn))
+
+
 def compute_greens_stable(bmats_up, bmats_dn, prod_len=1):
     r"""Computes the Green's functions for both spins.
 
@@ -306,6 +312,11 @@ def compute_greens_stable(bmats_up, bmats_dn, prod_len=1):
     gf_up = asvqrd_prod(bmats_up, prod_len)
     gf_dn = asvqrd_prod(bmats_dn, prod_len)
     return np.ascontiguousarray(gf_up), np.ascontiguousarray(gf_dn)
+
+
+def recompute_greens_stable(bmats_up, bmats_dn, gf_up, gf_dn, prod_len):
+    gf_up[:, :] = np.ascontiguousarray(asvqrd_prod(bmats_up, prod_len))
+    gf_dn[:, :] = np.ascontiguousarray(asvqrd_prod(bmats_dn, prod_len))
 
 
 @njit(void(expk_t, float64, conf_t, bmat_t, bmat_t, int64, int64), **jkwargs)
@@ -648,7 +659,8 @@ def iteration_fast(exp_k, nu, config, bmats_up, bmats_dn, gf_up, gf_dn, nwraps=8
     # Iterate over all time-steps
     for t in range(config.shape[1]):
         # Wrap Green's function between time steps
-        wrap_up_greens(bmats_up, bmats_dn, gf_up, gf_dn, t)
+        if t % nwraps == 0:
+            wrap_up_greens(bmats_up, bmats_dn, gf_up, gf_dn, t)
 
         # Iterate over all lattice sites randomly
         np.random.shuffle(sites)
@@ -673,16 +685,14 @@ def iteration_fast(exp_k, nu, config, bmats_up, bmats_dn, gf_up, gf_dn, nwraps=8
                 # Actually update configuration and B-matrices *after* GF update
                 # --------------------------------------------------------------
                 config[i, t] = -config[i, t]
-                # update_timestep_mats(exp_k, nu, config, bmats_up, bmats_dn, t)
+                update_timestep_mats(exp_k, nu, config, bmats_up, bmats_dn, t)
 
-        update_timestep_mats(exp_k, nu, config, bmats_up, bmats_dn, t)
+        # update_timestep_mats(exp_k, nu, config, bmats_up, bmats_dn, t)
 
         # Recompute Green's function after several time slices,
         # otherwise wrape Green's functions up to next time slice
         if (t + 1) % nwraps == 0:
-            gf_up, gf_dn = compute_greens(bmats_up, bmats_dn, t + 1)
-        # else:
-        #     wrap_up_greens(bmats_up, bmats_dn, gf_up, gf_dn, t)
+            recompute_greens(bmats_up, bmats_dn, gf_up, gf_dn, t + 1)
 
     return accepted
 
