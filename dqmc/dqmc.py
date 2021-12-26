@@ -30,7 +30,7 @@ from scipy.linalg import expm
 from numba import njit, float64, int8, int64, void
 from numba import types as nt
 from .model import HubbardModel  # noqa: F401
-from .linalg import dger, asvqrd_prod
+from .linalg import blas_dger, asvqrd_prod
 
 logger = logging.getLogger("dqmc")
 
@@ -558,8 +558,8 @@ def update_greens_blas(nu, config, gf_up, gf_dn, i, t):
     w_dn = np.copy(gf_dn[i, :])
 
     # Perform rank 1 update of GF
-    dger(alpha_up / (1.0 - alpha_up * u_up[i]), u_up, w_up, gf_up)
-    dger(alpha_dn / (1.0 - alpha_dn * u_dn[i]), u_dn, w_dn, gf_dn)
+    blas_dger(alpha_up / (1.0 - alpha_up * u_up[i]), u_up, w_up, gf_up)
+    blas_dger(alpha_dn / (1.0 - alpha_dn * u_dn[i]), u_dn, w_dn, gf_dn)
 
 
 @njit(void(bmat_t, bmat_t, gmat_t, gmat_t, int64), **jkwargs)

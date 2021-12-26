@@ -37,7 +37,7 @@ _dger_fn = _dger_functype(_dger_addr)
 
 
 @njit((float64, float64[:], float64[:], float64[:, :]), nogil=True, cache=True)
-def dger(alpha, x, y, a):
+def blas_dger(alpha, x, y, a):
     """Performs the rank 1 operation .math:`A = α x•y^T + A` via a BLAS call.
 
     Parameters
@@ -75,7 +75,7 @@ def dger(alpha, x, y, a):
     (float64, float64[:], float64[:], float64[:, :]),
     nogil=True, cache=True, fastmath=True
 )
-def dger_numpy(alpha, x, y, a):
+def numpy_dger(alpha, x, y, a):
     """Performs the rank 1 operation .math:`A = α x•y^T + A` via numpy methods.
 
     Parameters

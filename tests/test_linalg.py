@@ -19,16 +19,16 @@ aarr = hnp.arrays(dtype=np.float64, shape=(10, 10), elements=st.floats(-10., 10)
 
 
 @given(st.floats(-1.0, +1.0), xarr, yarr, aarr)
-def test_dger(alpha, x, y, a):
+def test_blas_dger(alpha, x, y, a):
     assume(np.all(np.isfinite(x)) and np.all(np.isfinite(y)))
     assume(np.all(np.isfinite(a)))
     x = x.astype(np.float64)
     y = y.astype(np.float64)
     a = a.astype(np.float64)
 
-    expected = la.blas.dger(alpha, np.copy(x), np.copy(y), a=np.copy(a))
+    expected = la.blas.blas_dger(alpha, np.copy(x), np.copy(y), a=np.copy(a))
     result = np.copy(a)
-    linalg.dger(alpha, x, y, result)
+    linalg.blas_dger(alpha, x, y, result)
     assert_allclose(expected, result, rtol=1e-10)
 
 
@@ -40,7 +40,7 @@ def test_dger_numpy(alpha, x, y, a):
     y = y.astype(np.float64)
     a = a.astype(np.float64)
 
-    expected = la.blas.dger(alpha, np.copy(x), np.copy(y), a=np.copy(a))
+    expected = la.blas.blas_dger(alpha, np.copy(x), np.copy(y), a=np.copy(a))
     result = np.copy(a)
-    linalg.dger_numpy(alpha, x, y, result)
+    linalg.numpy_dger(alpha, x, y, result)
     assert_allclose(expected, result, rtol=1e-10)
