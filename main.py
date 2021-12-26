@@ -7,9 +7,7 @@
 import sys
 import time
 import logging
-
 import numpy as np
-
 from dqmc import hubbard_hypercube
 from dqmc.simulator import DQMC
 from dqmc.parser import parse
