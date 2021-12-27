@@ -108,10 +108,21 @@ num_timesteps = 100
 warmup, measure = 300, 3000
 model = hubbard_hypercube(shape, u=4., eps=0., hop=1., mu=0., beta=1/5, periodic=True)
 
-dqmc = DQMC(model, num_timesteps)
+dqmc = DQMC(model, num_timesteps, num_recomp=1, prod_len=1, seed=0)
 results = dqmc.simulate(warmup, measure, callback=mfuncs.occupation)
 ```
-The `simulate`-method has a `callback` parameter for measuring observables, which
+The `simulate`-method measures the observables
+- `n_up`
+   The spin-up occupation `<n_↑>`.
+- `n_dn`
+   The spin-down occupation `<n_↓>`.
+- `n_double`
+   The double occupation `<n_↑ n_↓>`.
+- `local_moment`
+   The local moment `<n_↑> + <n_↓> - 2 <n_↑ n_↓>`.
+
+
+Additionally, the `simulate`-method has a `callback` parameter for measuring observables, which
 expects a method of the form
 ```python
 def callback(gf_up, gf_dn):
