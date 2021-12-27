@@ -14,7 +14,7 @@ from dqmc.parser import parse
 
 
 logger = logging.getLogger("dqmc")
-logger.setLevel(logging.INFO)
+logger.setLevel(logging.DEBUG)
 
 
 def log_parameters(p):
@@ -94,7 +94,7 @@ def main():
     if len(args):
         file = args[0]
     else:
-        file = "sample_chain.txt"
+        file = "tmp.txt"
 
     p = parse(file)
     model = hubbard_hypercube(p.shape, p.u, p.eps, p.t, p.mu, p.beta)

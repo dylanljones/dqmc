@@ -13,9 +13,16 @@
 import logging
 import numpy as np
 from .model import hubbard_hypercube
-from .dqmc import init_qmc, compute_timestep_mats, compute_greens, iteration_fast
-from .dqmc import recompute_greens_stable
 from .mp import run_parallel, prun_parallel
+from .dqmc import (     # noqa: F401
+    init_qmc,
+    compute_timestep_mats,
+    compute_greens,
+    iteration_fast,
+    accumulate_measurements,
+    recompute_greens_stable,    # noqa: F401
+    recompute_greens            # noqa: F401
+)
 
 logger = logging.getLogger("dqmc")
 
@@ -63,14 +70,15 @@ class DQMC:
 
     def greens(self):
         return compute_greens(self.bmats_up, self.bmats_dn, 0)
-        # return compute_greens_stable(self.bmats_up, self.bmats_dn, self.prod_len)
+        # return compute_greens_stable(self.bmats_up, self.bmats_dn, 0, self.prod_len)
 
     def get_greens(self):
         return self._gf_up, self._gf_dn
 
-    def recompute_greens(self):
+    def recompute_greens(self):   # noqa: F811
+        # recompute_greens(self.bmats_up, self.bmats_dn, self._gf_up, self._gf_dn, t=0)
         recompute_greens_stable(self.bmats_up, self.bmats_dn, self._gf_up, self._gf_dn,
-                                self.prod_len)
+                                t=0, prod_len=self.prod_len)
 
     def iteration(self):
         accepted = iteration_fast(
@@ -88,35 +96,31 @@ class DQMC:
         self.acceptance_probs.append(acc_ratio)
         logger.debug("[%s] %3d Ratio: %.2f", self.status, self.it, acc_ratio)
 
-        # Recompute Green's functions
-        # if self.it % self.num_recomp == 0:
-        #    logger.debug("Recomputing GF")
-        # self.recompute_greens()
-
     def accumulate_measurements(self, num_measurements):
-        # accumulate_measurements(self._gf_up,
-        #                         self._gf_dn,
-        #                         num_measurements,
-        #                         self.n_up,
-        #                         self.n_dn,
-        #                         self.n_double,
-        #                         self.local_moment)
-        # return
-        scale = 1 / num_measurements
-
-        gf_up, gf_dn = self.get_greens()
-        n_up = 1 - np.diag(gf_up)
-        n_dn = 1 - np.diag(gf_dn)
-        n_double = n_up * n_dn
-        moment = n_up + n_dn - 2 * n_double
-
-        self.n_up += n_up * scale
-        self.n_dn += n_dn * scale
-        self.n_double += n_double * scale
-        self.local_moment += moment * scale
+        # Recompute Green's functions
+        self.recompute_greens()
+        accumulate_measurements(self._gf_up,
+                                self._gf_dn,
+                                num_measurements,
+                                self.n_up,
+                                self.n_dn,
+                                self.n_double,
+                                self.local_moment)
+        # scale = 1 / num_measurements
+        #
+        # gf_up, gf_dn = self.get_greens()
+        # n_up = 1 - np.diag(gf_up)
+        # n_dn = 1 - np.diag(gf_dn)
+        # n_double = n_up * n_dn
+        # moment = n_up + n_dn - 2 * n_double
+        #
+        # self.n_up += n_up * scale
+        # self.n_dn += n_dn * scale
+        # self.n_double += n_double * scale
+        # self.local_moment += moment * scale
 
     def warmup(self, sweeps):
-        self.it = sweeps
+        self.it = 0
         self.status = "warm"
         for sweep in range(sweeps):
             self.iteration()

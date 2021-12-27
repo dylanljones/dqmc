@@ -30,7 +30,7 @@ from scipy.linalg import expm
 from numba import njit, float64, int8, int64, void
 from numba import types as nt
 from .model import HubbardModel  # noqa: F401
-from .linalg import blas_dger, asvqrd_prod
+from .linalg import blas_dger, asvqrd_prod_0beta
 
 logger = logging.getLogger("dqmc")
 
@@ -290,7 +290,7 @@ def recompute_greens(bmats_up, bmats_dn, gf_up, gf_dn, t):
     gf_dn[:, :] = np.ascontiguousarray(np.linalg.inv(m_dn))
 
 
-def compute_greens_stable(bmats_up, bmats_dn, prod_len=1):
+def compute_greens_stable(bmats_up, bmats_dn, t, prod_len=1):
     r"""Computes the Green's functions for both spins.
 
     Parameters
@@ -299,6 +299,8 @@ def compute_greens_stable(bmats_up, bmats_dn, prod_len=1):
         The spin-up time step matrices.
     bmats_dn : (L, N, N) np.ndarray
         The spin-down time step matrices.
+    t : int
+        The current time-step index :math:'t'.
     prod_len : int
         The number of matrices multiplied explicitly
 
@@ -309,14 +311,14 @@ def compute_greens_stable(bmats_up, bmats_dn, prod_len=1):
     gf_dn : np.ndarray
         The spin-down Green's function.
     """
-    gf_up = asvqrd_prod(bmats_up, prod_len)
-    gf_dn = asvqrd_prod(bmats_dn, prod_len)
+    gf_up = asvqrd_prod_0beta(bmats_up, t, prod_len)
+    gf_dn = asvqrd_prod_0beta(bmats_dn, t, prod_len)
     return np.ascontiguousarray(gf_up), np.ascontiguousarray(gf_dn)
 
 
-def recompute_greens_stable(bmats_up, bmats_dn, gf_up, gf_dn, prod_len):
-    gf_up[:, :] = np.ascontiguousarray(asvqrd_prod(bmats_up, prod_len))
-    gf_dn[:, :] = np.ascontiguousarray(asvqrd_prod(bmats_dn, prod_len))
+def recompute_greens_stable(bmats_up, bmats_dn, gf_up, gf_dn, t, prod_len):
+    gf_up[:, :] = np.ascontiguousarray(asvqrd_prod_0beta(bmats_up, t, prod_len))
+    gf_dn[:, :] = np.ascontiguousarray(asvqrd_prod_0beta(bmats_dn, t, prod_len))
 
 
 @njit(void(expk_t, float64, conf_t, bmat_t, bmat_t, int64, int64), **jkwargs)
