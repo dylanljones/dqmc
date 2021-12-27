@@ -10,7 +10,6 @@ The deadline of the hypothesis tests have been increased to prevent `flaky` erro
 
 import numpy as np
 import scipy.linalg as la
-from functools import reduce
 from numpy.testing import assert_array_equal, assert_array_almost_equal, assert_allclose
 from hypothesis import given, settings, assume, strategies as st
 from dqmc import dqmc, hubbard_hypercube
@@ -262,7 +261,7 @@ def test_update_greens_blas(u, beta, i):
     dqmc.update_greens_blas(nu, config, gf_up, gf_dn, i, t)
     # -------------------------------------------------
     dqmc.update(exp_k, nu, config, bmats_up, bmats_dn, i, t)
-    # bmats_up, bmats_dn = dqmc.compute_timestep_mats(exp_k, nu, config)
+
     gf_up_ref, gf_dn_ref = dqmc.compute_greens(bmats_up, bmats_dn, t)
 
     assert_array_almost_equal(gf_up, gf_up_ref, decimal=8)
