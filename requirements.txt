@@ -5,3 +5,5 @@ numba>=0.50.0
 hypothesis>=6.0.0
 lattpy>=0.6
 psutil>=5.0.0
+h5py>=3.0.0
+tqdm>=4.0.0

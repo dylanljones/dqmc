@@ -6,13 +6,14 @@
 
 Determinant Quantum Monte Carlo simulations of the Hubbard model in Python.
 
-*NOTE*: This project is still under development and might contain errors or change significantly in the future!
+| :warning: **WARNING**: This project is still under development and might contain errors or change significantly in the future! |
+| --- |
 
 ## Installation
 
 Install via `pip` from github:
 ```commandline
-pip install git+git://github.com/dylanljones/cmpy.git@VERSION
+pip install git+https://github.com/dylanljones/dqmc.git@VERSION
 ```
 or download/clone the package, navigate to the root directory and install via
 ````commandline
@@ -23,11 +24,51 @@ or the `setup.py` script
 python setup.py install
 ````
 
+
+## Quickstart
+
+To run a simulation, run the `main.py` script with a configuration text file
+as parameter, for example:
+````commandline
+python main.py examples/chain.txt
+````
+
+### Parameters
+
+- `shape`
+   The shape of the lattice model.
+- `U`
+   The interaction strength of the Hubbard model.
+- `eps`
+   The on-site energy of the Hubbard model.
+- `t`
+   The hopping energy of the Hubbard model.
+- `mu`
+   The chemical potential of the Hubbard model. Set to `U/2` for half filling.
+- `dt` (optional)
+   The imaginary time step size.
+- `beta` (optional)
+   The inverse temperature. Can be set instead of `dt`.
+- `temp` (optional)
+   The temperature. Can be set instead of `dt`.
+- `L`
+   The number of imaginary time slices
+- `nequil`
+   The number of warmup-sweeps
+- `nsampl`
+   The number of measurement-sweeps
+- `nrecomp` (optional)
+   The number of time slice wraps after which the Green's functions are recomputed.
+   The default is `1`.
+- `prodLen` (optional)
+   The number of explicit matrix products used for the stabilized matrix product
+   via ASvQRD. The default is `1`.
+
 ## Usage
 
 ### Initializing the Hubbard model
 
-In order to run a simulation, a Hubbard model has to be constructed. This can be 
+In order to run a simulation, a Hubbard model has to be constructed. This can be
 done manually by initializing the included `HubbardModel`:
 ```python
 import numpy as np
@@ -43,8 +84,8 @@ model.add_connections(1)
 # Build the lattice with periodic boundary conditions along both axis
 model.build((5, 5), relative=True, periodic=(0, 1))
 ```
-or by using the helper function `hubbard_hypercube` to construct a `d`-dimensional 
-hyper-rectangular Hubbard model with one atom in the unit cell and nearest neighbor 
+or by using the helper function `hubbard_hypercube` to construct a `d`-dimensional
+hyper-rectangular Hubbard model with one atom in the unit cell and nearest neighbor
 hopping:
 ```python
 from dqmc import hubbard_hypercube
@@ -56,8 +97,8 @@ Setting `periodic=True` marks all axis as periodic.
 
 ### Running simulations and measuring observables
 
-To run a Determinant Quantum Monte carlo simulation the `DQMC`-object can be used. 
-This is a wrapper of the main DQMC methods, which are contained in `dqmc/dqmc.py` 
+To run a Determinant Quantum Monte carlo simulation the `DQMC`-object can be used.
+This is a wrapper of the main DQMC methods, which are contained in `dqmc/dqmc.py`
 and use jit (just in time compilation) to improve performance:
 ```python
 from dqmc import hubbard_hypercube, mfuncs, DQMC
@@ -67,17 +108,28 @@ num_timesteps = 100
 warmup, measure = 300, 3000
 model = hubbard_hypercube(shape, u=4., eps=0., hop=1., mu=0., beta=1/5, periodic=True)
 
-dqmc = DQMC(model, num_timesteps)
+dqmc = DQMC(model, num_timesteps, num_recomp=1, prod_len=1, seed=0)
 results = dqmc.simulate(warmup, measure, callback=mfuncs.occupation)
 ```
-The `simulate`-method has a `callback` parameter for measuring observables, which 
+The `simulate`-method measures the observables
+- `n_up`
+   The spin-up occupation `<n_↑>`.
+- `n_dn`
+   The spin-down occupation `<n_↓>`.
+- `n_double`
+   The double occupation `<n_↑ n_↓>`.
+- `local_moment`
+   The local moment `<n_↑> + <n_↓> - 2 <n_↑ n_↓>`.
+
+
+Additionally, the `simulate`-method has a `callback` parameter for measuring observables, which
 expects a method of the form
 ```python
 def callback(gf_up, gf_dn):
     ...
     return result
 ```
-The returned result must be a `np.ndarray` for ensuring correct averaging after the 
+The returned result must be a `np.ndarray` for ensuring correct averaging after the
 measurement sweeps. If no callback is given the local Green's function `G_{ij}` is
 measured by default. A collection of methods for measuring observables is contained
 in the `mfuncs` module.
@@ -92,7 +144,7 @@ beta = 1.0
 num_timesteps = 100
 warmup, measure = 300, 3000
 
-res = run_dqmc(shape, u, eps, hop, mu, beta, num_timesteps, 
+res = run_dqmc(shape, u, eps, hop, mu, beta, num_timesteps,
                warmup, measure, mfuncs.occupation)
 ```
 
@@ -113,27 +165,14 @@ params = (
   shape, inters, eps, hop, mu, beta, num_timesteps,
   warmup, measure, mfuncs.occupation
 )
-
 with ProcessPool(max_workers=4) as executor:
-  executor.distribute(run_dqmc, *params)  # Distribute workloads
-  results = executor.complete_all()  # Wait for results
+  results = executor.distribute(run_dqmc, params)
 ```
 or the inlcuded `run_parallel`-method, which internally calls the `run_dqmc`-method:
 ```python
-from dqmc import run_parallel, mfuncs
+from dqmc import run_dqmc_parallel
 
-shape = 10
-inters = [2, 3, 4, 5, 6, 7, 8, 9]
-eps, mu, hop = 0.0, 0.0, 1.0
-beta = 1.0
-num_timesteps = 100
-warmup, measure = 300, 3000
-
-params = (
-  shape, inters, eps, hop, mu, beta, num_timesteps,
-  warmup, measure, mfuncs.occupation
-)
-results = run_parallel(params)
+results = run_dqmc_parallel(params, max_workers=4)
 ```
 Scalar arguments are expanded to a list and shared by the processes.
 

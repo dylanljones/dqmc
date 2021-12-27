@@ -4,50 +4,73 @@
 #
 # Copyright (c) 2021, Dylan Jones
 
+import sys
 import logging
 import numpy as np
-import matplotlib.pyplot as plt
-from dqmc import DQMC, hubbard_hypercube, mfuncs
+from dqmc import hubbard_hypercube
+from dqmc.simulator import DQMC
+from dqmc.parser import parse
+
 
 logger = logging.getLogger("dqmc")
-logger.setLevel(logging.INFO)
+logger.setLevel(logging.DEBUG)
 
 
-def plot_acceptance_probs(probs, warmup):
-    fig, ax = plt.subplots()
-    ax.plot(probs)
-    ax.grid()
-    ax.set_ylim(-0.01, 1.01)
-    ax.set_xlim(0, None)
-    ax.set_xlabel("Seeep")
-    ax.set_ylabel("Ratio")
-    ax.axvline(x=warmup, color="r", ls="--")
+def log_parameters(p):
+    logger.info("_" * 60)
+    logger.info("Simulation parameters")
+    logger.info("")
+    logger.info("     Shape: %s", p.shape)
+    logger.info("         U: %s", p.u)
+    logger.info("         t: %s", p.t)
+    logger.info("       eps: %s", p.eps)
+    logger.info("        mu: %s", p.mu)
+    logger.info("      beta: %s", p.beta)
+    logger.info("      temp: %s", 1 / p.beta)
+    logger.info(" time-step: %s", p.dt)
+    logger.info("         L: %s", p.num_timesteps)
+    logger.info("   nrecomp: %s", p.num_recomp)
+    logger.info("   prodLen: %s", p.prod_len)
+    logger.info("    nequil: %s", p.num_equil)
+    logger.info("    nsampl: %s", p.num_sampl)
+    logger.info("      seed: %s", p.seed)
+    logger.info("")
 
 
-def run_dqmc(num_sites, num_timesteps, u, temp, mu=0., hop=1., warmup=500, measure=2000,
-             callback=None):
-    model = hubbard_hypercube(num_sites, u=u, mu=mu, hop=hop, beta=1 / temp, periodic=True)
-    dqmc = DQMC(model, num_timesteps)
-    return dqmc.simulate(warmup, measure, callback), dqmc.acceptance_probs
+def log_results(sim):
+    n_up = np.mean(sim.n_up)
+    n_dn = np.mean(sim.n_dn)
+    n_double = np.mean(sim.n_double)
+    local_moment = np.mean(sim.local_moment)
 
-
-def pformat_result(value, error, dec=5):
-    return f"{value:.{dec}f}±{error:.{dec}f}"
+    logger.info("_" * 60)
+    logger.info("Simulation results")
+    logger.info("")
+    logger.info("     Total density: %8.4f", n_up + n_dn)
+    logger.info("   Spin-up density: %8.4f", n_up)
+    logger.info(" Spin-down density: %8.4f", n_dn)
+    logger.info("  Double occupancy: %8.4f", n_double)
+    logger.info("      Local moment: %8.4f", local_moment)
+    logger.info("")
 
 
 def main():
-    num_sites = 10
-    num_timesteps = 100
-    warmup = 500
-    measure = 3000
-    u, mu, hop = 4.0, 0.0, 1.0
-    temp = 10
+    args = sys.argv[1:]
+    if len(args):
+        file = args[0]
+    else:
+        file = "test.txt"
 
-    res, probs = run_dqmc(num_sites, num_timesteps, u, temp, mu, hop, warmup, measure, mfuncs.mz_moment)
-    print(res)
-    print(pformat_result(np.mean(res), np.std(res), dec=4))
-    plot_acceptance_probs(probs, warmup)
-    plt.show()
+    p = parse(file)
+    model = hubbard_hypercube(p.shape, p.u, p.eps, p.t, p.mu, p.beta)
+
+    log_parameters(p)
+
+    logger.info("Starting DQMC simulation...")
+    sim = DQMC(model, p.num_timesteps, p.num_recomp, p.prod_len, seed=p.seed)
+    sim.simulate(p.num_equil, p.num_sampl)
+
+    log_results(sim)
 
 
 if __name__ == "__main__":

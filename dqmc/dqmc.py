@@ -30,6 +30,7 @@ from scipy.linalg import expm
 from numba import njit, float64, int8, int64, void
 from numba import types as nt
 from .model import HubbardModel  # noqa: F401
+from .linalg import blas_dger, asvqrd_prod_0beta
 
 logger = logging.getLogger("dqmc")
 
@@ -38,9 +39,9 @@ conf_t = int8[:, :]
 bmat_t = float64[:, :, ::1]
 gmat_t = float64[:, ::1]
 
-rng = np.random.default_rng()
-
 UP, DN = +1, -1
+
+jkwargs = dict(nogil=True, fastmath=True, cache=True)
 
 
 def init_configuration(num_sites: int, num_timesteps: int) -> np.ndarray:
@@ -58,10 +59,13 @@ def init_configuration(num_sites: int, num_timesteps: int) -> np.ndarray:
     config : (N, L) np.ndarray
         The array representing the configuration or or Hubbard-Stratonovich field.
     """
-    return rng.choice([-1, +1], size=(num_sites, num_timesteps)).astype(np.int8)
+    # samples = random.choices([-1, +1], k=num_sites * num_timesteps)
+    samples = np.random.choice([-1, +1], size=num_sites * num_timesteps)
+    config = np.array(samples).reshape((num_sites, num_timesteps)).astype(np.int8)
+    return config
 
 
-def init_qmc(model, num_timesteps):
+def init_qmc(model, num_timesteps, seed):
     r"""Initializes configuration and static variables of the QMC algorithm.
 
     Parameters
@@ -70,6 +74,8 @@ def init_qmc(model, num_timesteps):
         The model instance.
     num_timesteps : int
         The number of time steps `L` used in the Monte Carlo simulation.
+    seed : int
+        A seed to be set before creating the cinfiguration.
 
     Returns
     -------
@@ -80,6 +86,9 @@ def init_qmc(model, num_timesteps):
     config : (N, L) np.ndarray
         The array representing the configuration or or Hubbard-Stratonovich field.
     """
+
+    np.random.seed(seed)
+
     # Build quadratic terms of Hamiltonian
     ham_k = model.hamiltonian_kinetic()
 
@@ -96,6 +105,7 @@ def init_qmc(model, num_timesteps):
     # Compute factor and matrix exponential of kinetic hamiltonian
     nu = math.acosh(math.exp(model.u * dtau / 2.0)) if model.u else 0
     logger.debug("nu=%s", nu)
+
     exp_k = expm(dtau * ham_k)
     logger.debug("min(e^k)=%s", np.min(exp_k))
     logger.debug("max(e^k)=%s", np.max(exp_k))
@@ -114,7 +124,7 @@ def init_qmc(model, num_timesteps):
 # =========================================================================
 
 
-@njit(float64[:, ::1](expk_t, float64, conf_t, int64, int64), cache=True)
+@njit(float64[:, ::1](expk_t, float64, conf_t, int64, int64), **jkwargs)
 def compute_timestep_mat(exp_k, nu, config, t, sigma):
     r"""Computes the time step matrix :math:'B_σ(h_t)'.
 
@@ -146,10 +156,11 @@ def compute_timestep_mat(exp_k, nu, config, t, sigma):
     b : (N, N) np.ndarray
         The matrix :math:'B_{t, σ}(h_t)'.
     """
+    # return np.dot(exp_k, np.dot(np.diag(np.exp(sigma * nu * config[:, t])), exp_k))
     return exp_k * np.exp(sigma * nu * config[:, t])
 
 
-@njit(nt.UniTuple(bmat_t, 2)(expk_t, float64, conf_t), cache=True)
+@njit(nt.UniTuple(bmat_t, 2)(expk_t, float64, conf_t), **jkwargs)
 def compute_timestep_mats(exp_k, nu, config):
     r"""Computes the time step matrices :math:'B_σ(h_t)' for all times and both spins.
 
@@ -184,7 +195,7 @@ def compute_timestep_mats(exp_k, nu, config):
     return np.ascontiguousarray(bmats_up), np.ascontiguousarray(bmats_dn)
 
 
-@njit(void(expk_t, float64, conf_t, bmat_t, bmat_t, int64), cache=True)
+@njit(void(expk_t, float64, conf_t, bmat_t, bmat_t, int64), **jkwargs)
 def update_timestep_mats(exp_k, nu, config, bmats_up, bmats_dn, t):
     r"""Updates one time step matrices :math:'B_σ(h_t)' for one time step.
 
@@ -207,38 +218,8 @@ def update_timestep_mats(exp_k, nu, config, bmats_up, bmats_dn, t):
     bmats_dn[t] = compute_timestep_mat(exp_k, nu, config, t, sigma=DN)
 
 
-@njit(float64[:, :](bmat_t, int64[:]), cache=True)
-def compute_timeflow_map(bmats, order):
-    r"""Computes the fermion time flow map matrix :math:'A_σ(h)'.
-
-    Notes
-    -----
-    The matrix :math:'A_σ' is defined as
-    ..math::
-        A_σ = B_σ(1) B_σ(2) ... B_σ(L)
-
-    Parameters
-    ----------
-    bmats : (L, N, N) np.ndarray
-        The time step matrices.
-    order : np.ndarray
-        The order used for multiplying the :math:'B' matrices.
-
-    Returns
-    -------
-    a : (N, N) np.ndarray
-        The time flow map matrix :math:'A_{σ}(h)'.
-    """
-    # First matrix
-    b_prod = bmats[order[0]]
-    # Following matrices multiplied with dot-product
-    for i in order[1:]:
-        b_prod = np.dot(b_prod, bmats[i])
-    return b_prod
-
-
-@njit(nt.UniTuple(float64[:, ::1], 2)(bmat_t, bmat_t, int64[:]))
-def compute_m_matrices(bmats_up, bmats_dn, order):
+@njit(nt.UniTuple(float64[:, :], 2)(bmat_t, bmat_t, int64), **jkwargs)
+def compute_m_matrices(bmats_up, bmats_dn, t):
     r"""Computes the matrix :math:'M_σ = I + A_σ(h)' for both spins.
 
     Parameters
@@ -247,8 +228,8 @@ def compute_m_matrices(bmats_up, bmats_dn, order):
         The spin-up time step matrices.
     bmats_dn : (L, N, N) np.ndarray
         The spin-down time step matrices.
-    order : np.ndarray, optional
-        The order used for multiplying the :math:'B' matrices.
+    t : int
+        The current time-step index :math:'t'.
 
     Returns
     -------
@@ -257,16 +238,27 @@ def compute_m_matrices(bmats_up, bmats_dn, order):
     m_dn : (N, N) np.ndarray
         The spin-down :math:'M' matrix.
     """
-    if order is None:
-        order = np.arange(len(bmats_up), dtype=np.int64)
+    # Compute product of B-matrices in reverse order,
+    # such that the last index is `t`
+    order = np.arange(bmats_up.shape[0], 0, -1) - 1
+    if t != 0:
+        order = np.roll(order, t)
+
+    a_up = bmats_up[order[0]]
+    a_dn = bmats_dn[order[0]]
+    for i in order[1:]:
+        a_up = np.dot(a_up, bmats_up[i])
+        a_dn = np.dot(a_dn, bmats_dn[i])
+
+    # Add identities to products
     eye = np.eye(bmats_up[0].shape[0], dtype=np.float64)
-    m_up = eye + compute_timeflow_map(bmats_up, order)
-    m_dn = eye + compute_timeflow_map(bmats_dn, order)
+    m_up = eye + a_up
+    m_dn = eye + a_dn
     return m_up, m_dn
 
 
-@njit(nt.Tuple((gmat_t, gmat_t))(bmat_t, bmat_t, int64[:]), cache=True)
-def compute_greens(bmats_up, bmats_dn, order):
+@njit(nt.UniTuple(gmat_t, 2)(bmat_t, bmat_t, int64), **jkwargs)
+def compute_greens(bmats_up, bmats_dn, t):
     r"""Computes the Green's functions for both spins.
 
     Parameters
@@ -275,8 +267,8 @@ def compute_greens(bmats_up, bmats_dn, order):
         The spin-up time step matrices.
     bmats_dn : (L, N, N) np.ndarray
         The spin-down time step matrices.
-    order : (L, ) np.ndarray
-        The order used for multiplying the :math:'B' matrices.
+    t : int
+        The current time-step index :math:'t'.
 
     Returns
     -------
@@ -285,13 +277,51 @@ def compute_greens(bmats_up, bmats_dn, order):
     gf_dn : np.ndarray
         The spin-down Green's function.
     """
-    m_up, m_dn = compute_m_matrices(bmats_up, bmats_dn, order)
-    gf_up = la.inv(m_up)
-    gf_dn = la.inv(m_dn)
+    m_up, m_dn = compute_m_matrices(bmats_up, bmats_dn, t)
+    gf_up = np.linalg.inv(m_up)
+    gf_dn = np.linalg.inv(m_dn)
     return np.ascontiguousarray(gf_up), np.ascontiguousarray(gf_dn)
 
 
-@njit(void(expk_t, float64, conf_t, bmat_t, bmat_t, int64, int64), cache=True)
+@njit((bmat_t, bmat_t, gmat_t, gmat_t, int64), **jkwargs)
+def recompute_greens(bmats_up, bmats_dn, gf_up, gf_dn, t):
+    m_up, m_dn = compute_m_matrices(bmats_up, bmats_dn, t)
+    gf_up[:, :] = np.ascontiguousarray(np.linalg.inv(m_up))
+    gf_dn[:, :] = np.ascontiguousarray(np.linalg.inv(m_dn))
+
+
+def compute_greens_stable(bmats_up, bmats_dn, t, prod_len=1):
+    r"""Computes the Green's functions for both spins.
+
+    Parameters
+    ----------
+    bmats_up : (L, N, N) np.ndarray
+        The spin-up time step matrices.
+    bmats_dn : (L, N, N) np.ndarray
+        The spin-down time step matrices.
+    t : int
+        The current time-step index :math:'t'.
+    prod_len : int
+        The number of matrices multiplied explicitly
+
+    Returns
+    -------
+    gf_up : np.ndarray
+        The spin-up Green's function.
+    gf_dn : np.ndarray
+        The spin-down Green's function.
+    """
+    gf_up = asvqrd_prod_0beta(bmats_up, t, prod_len)
+    gf_dn = asvqrd_prod_0beta(bmats_dn, t, prod_len)
+    return np.ascontiguousarray(gf_up), np.ascontiguousarray(gf_dn)
+
+
+def recompute_greens_stable(bmats_up, bmats_dn, gf_up, gf_dn, t, prod_len):
+    gf_up[:, :] = np.ascontiguousarray(asvqrd_prod_0beta(bmats_up, t, prod_len))
+    gf_dn[:, :] = np.ascontiguousarray(asvqrd_prod_0beta(bmats_dn, t, prod_len))
+
+
+@njit(void(expk_t, float64, conf_t, bmat_t, bmat_t, int64, int64), **jkwargs)
 def update(exp_k, nu, config, bmats_up, bmats_dn, i, t):
     r"""Updates the configuration and the corresponding time-step matrices.
 
@@ -325,7 +355,7 @@ def update(exp_k, nu, config, bmats_up, bmats_dn, i, t):
     nt.Tuple((float64, int64))(
         expk_t, float64, conf_t, bmat_t, bmat_t, float64, int64[:]
     ),
-    cache=True,
+    **jkwargs
 )
 def iteration_det(exp_k, nu, config, bmats_up, bmats_dn, old_det, times):
     r"""Runs one iteration of the determinant DQMC-scheme.
@@ -364,7 +394,7 @@ def iteration_det(exp_k, nu, config, bmats_up, bmats_dn, old_det, times):
             # Propose update by flipping spin in confguration
             update(exp_k, nu, config, bmats_up, bmats_dn, i, t)
             # Compute determinant product of the new configuration
-            m_up, m_dn = compute_m_matrices(bmats_up, bmats_dn, times)
+            m_up, m_dn = compute_m_matrices(bmats_up, bmats_dn, t)
             det_up = la.det(m_up)
             det_dn = la.det(m_dn)
             new_det = det_up * det_dn
@@ -388,7 +418,7 @@ def iteration_det(exp_k, nu, config, bmats_up, bmats_dn, old_det, times):
 # =========================================================================
 
 
-@njit(nt.float64(float64, conf_t, gmat_t, gmat_t, int64, int64), cache=True)
+@njit(nt.float64(float64, conf_t, gmat_t, gmat_t, int64, int64), **jkwargs)
 def compute_acceptance_fast(nu, config, gf_up, gf_dn, i, t):
     r"""Computes the Metropolis acceptance via the fast update scheme.
 
@@ -428,8 +458,8 @@ def compute_acceptance_fast(nu, config, gf_up, gf_dn, i, t):
     return min(abs(d_up * d_dn), 1.0)
 
 
-@njit(void(float64, conf_t, gmat_t, gmat_t, int64, int64), cache=True)
-def update_greens(nu, config, gf_up, gf_dn, k, t):
+@njit(void(float64, conf_t, gmat_t, gmat_t, int64, int64), **jkwargs)
+def update_greens(nu, config, gf_up, gf_dn, i, t):
     r"""Performs a Sherman-Morrison update of the Green's function.
 
     Parameters
@@ -438,7 +468,7 @@ def update_greens(nu, config, gf_up, gf_dn, k, t):
         The parameter ν defined by :math:'\cosh(ν) = e^{U Δτ / 2}'
     config : (N, L) np.ndarray
         The configuration or Hubbard-Stratonovich field.
-    k : int
+    i : int
         The site index :math:'i' of the proposed spin-flip.
     t : int
         The time-step index :math:'t' of the proposed spin-flip.
@@ -467,41 +497,31 @@ def update_greens(nu, config, gf_up, gf_dn, k, t):
     num_sites = config.shape[0]
 
     # Compute alphas
-    arg = -2 * nu * config[k, t]
+    arg = -2 * nu * config[i, t]
     alpha_up = np.expm1(UP * arg)
     alpha_dn = np.expm1(DN * arg)
     # Compute acceptance ratios
-    d_up = 1 + alpha_up * (1 - gf_up[k, k])
-    d_dn = 1 + alpha_dn * (1 - gf_dn[k, k])
+    d_up = 1 + alpha_up * (1 - gf_up[i, i])
+    d_dn = 1 + alpha_dn * (1 - gf_dn[i, i])
     # Compute fractions
     frac_up = alpha_up / d_up
     frac_dn = alpha_dn / d_dn
 
     # Compute update to Green's functions
     idel = np.zeros(num_sites)
-    idel[k] = 1.
+    idel[i] = 1.
 
     tmp = np.zeros((num_sites, 1))
-    tmp[:, 0] = gf_up[:, k] - idel
-    gf_up += frac_up * tmp * gf_up[k, :]
+    tmp[:, 0] = gf_up[:, i] - idel
+    gf_up += frac_up * tmp * gf_up[i, :]
 
-    tmp[:, 0] = gf_dn[:, k] - idel
-    gf_dn += frac_dn * tmp * gf_dn[k, :]
+    tmp[:, 0] = gf_dn[:, i] - idel
+    gf_dn += frac_dn * tmp * gf_dn[i, :]
 
 
-@njit(void(float64, conf_t, gmat_t, gmat_t, int64, int64), cache=True)
-def update_greens2(nu, config, gf_up, gf_dn, i, t):
-    r"""Updates the Green's function via the Sherman-Morrison formula.
-
-    Notes
-    -----
-    The update of the Green's function after the spin at
-    site i and time t has been flipped  is defined as
-    ..math::
-        α_σ = e^{-2 σ ν s(i, t)} - 1
-        c_{j,σ} = -α_σ G_{ji,σ} + δ_{ji} α_σ
-        b_{k,σ} = G_{ki,σ} / (1 + c_{i,σ})
-        G_{jk,σ} = G_{jk,σ} - b_{j,σ}c_{k,σ}
+@njit(void(float64, conf_t, gmat_t, gmat_t, int64, int64), **jkwargs)
+def update_greens_blas(nu, config, gf_up, gf_dn, i, t):
+    r"""Performs a Sherman-Morrison update of the Green's function.
 
     Parameters
     ----------
@@ -517,28 +537,49 @@ def update_greens2(nu, config, gf_up, gf_dn, i, t):
         The spin-up Green's function.
     gf_dn : np.ndarray
         The spin-down Green's function.
+
+    Notes
+    -----
+    The update of the Green's function *before* flipping spin at site i and time t
+    is defined as
+    ..math::
+        G_σ = G_σ - (α_σ / d_σ) u_σ w_σ^T
+        u_σ = [I - G_σ] e_i
+        w_σ = G_σ^T e_i
+        α_σ = e^{-2 σ ν s(i, t)} - 1
+        d_σ = 1 + (1 - G_{ii, σ}) α_σ
+
+    References
+    ----------
+    .. [1] Z. Bai et al., “Numerical Methods for Quantum Monte Carlo Simulations
+           of the Hubbard Model”, in Series in Contemporary Applied Mathematics,
+           Vol. 12 (June 2009), p. 1.
     """
-    # Compute alphas
+    # Compute alphas and determinants
     arg = -2 * nu * config[i, t]
     alpha_up = np.expm1(UP * arg)
     alpha_dn = np.expm1(DN * arg)
-    # Compute c-vectors for all j
-    c_up = -alpha_up * gf_up[i, :]
-    c_dn = -alpha_dn * gf_dn[i, :]
-    # Add diagonal elements where j=i
-    c_up[i] += alpha_up
-    c_dn[i] += alpha_dn
-    # Compute b-vectors for all k
-    b_up = gf_up[:, i] / (1 + c_up[i])
-    b_dn = gf_dn[:, i] / (1 + c_dn[i])
-    # Compute outer product of b and c and update GF for all j and k
-    gf_up -= np.outer(b_up, c_up)
-    gf_dn -= np.outer(b_dn, c_dn)
+    # d_up = 1 + (1 - gf_up[i, i]) * alpha_up
+    # d_dn = 1 + (1 - gf_dn[i, i]) * alpha_dn
+    # Copy i-th column of (G-1)
+    u_up = np.copy(gf_up[:, i])
+    u_dn = np.copy(gf_dn[:, i])
+    u_up[i] -= 1.0
+    u_dn[i] -= 1.0
+    # Copy i-th row of G
+    w_up = gf_up[i, :]
+    w_dn = gf_dn[i, :]
+    # Perform rank 1 update of GF
+    blas_dger(alpha_up / (1.0 - alpha_up * u_up[i]), u_up, w_up, gf_up)
+    blas_dger(alpha_dn / (1.0 - alpha_dn * u_dn[i]), u_dn, w_dn, gf_dn)
 
 
-@njit(void(bmat_t, bmat_t, gmat_t, gmat_t, int64), cache=True)
-def wrap_greens(bmats_up, bmats_dn, gf_up, gf_dn, t):
-    r"""Wraps the Green's functions between the time step :math:'t' and :math:'t+1'.
+@njit(void(bmat_t, bmat_t, gmat_t, gmat_t, int64), **jkwargs)
+def wrap_up_greens(bmats_up, bmats_dn, gf_up, gf_dn, t):
+    r"""Wraps the Green's functions from the time step :math:'t' up to :math:'t+1'.
+
+    This method has to be called after a time-step in order to prepare the
+    Green's function for the next hogher time slice.
 
     Parameters
     ----------
@@ -559,10 +600,35 @@ def wrap_greens(bmats_up, bmats_dn, gf_up, gf_dn, t):
     gf_dn[:, :] = np.dot(np.dot(b_dn, gf_dn), la.inv(b_dn))
 
 
-@njit(
-    int64(expk_t, float64, conf_t, bmat_t, bmat_t, gmat_t, gmat_t, int64[:]), cache=True
-)
-def iteration_fast(exp_k, nu, config, bmats_up, bmats_dn, gf_up, gf_dn, times):
+@njit(void(bmat_t, bmat_t, gmat_t, gmat_t, int64), **jkwargs)
+def wrap_down_greens(bmats_up, bmats_dn, gf_up, gf_dn, t):
+    r"""Wraps the Green's functions from the time step :math:'t' down to :math:'t-1'.
+
+    This method has to be called after a time-step in order to prepare the
+    Green's function for the next lower time slice.
+
+    Parameters
+    ----------
+    bmats_up : (L, N, N) np.ndarray
+        The spin-up time step matrices.
+    bmats_dn : (L, N, N) np.ndarray
+        The spin-down time step matrices.
+    gf_up : (N, N) np.ndarray
+        The spin-up Green's function.
+    gf_dn : (N. N) np.ndarray
+        The spin-down Green's function.
+    t : int
+        The time-step index :math:'t' of the last iteration over all sites.
+    """
+    idx = t - 1
+    b_up = bmats_up[idx]
+    b_dn = bmats_dn[idx]
+    gf_up[:, :] = np.dot(np.dot(la.inv(b_up), gf_up), b_up)
+    gf_dn[:, :] = np.dot(np.dot(la.inv(b_dn), gf_dn), b_dn)
+
+
+@njit(int64(expk_t, float64, conf_t, bmat_t, bmat_t, gmat_t, gmat_t, int64), **jkwargs)
+def iteration_fast(exp_k, nu, config, bmats_up, bmats_dn, gf_up, gf_dn, nwraps=8):
     r"""Runs one iteration of the rank-1 DQMC-scheme.
 
     Parameters
@@ -581,8 +647,8 @@ def iteration_fast(exp_k, nu, config, bmats_up, bmats_dn, gf_up, gf_dn, times):
         The spin-up Green's function.
     gf_dn : (N. N) np.ndarray
         The spin-down Green's function.
-    times : (L,) np.ndarray
-        An array of time indices.
+    nwraps : int
+        Number of time slices after which the Green's functions are recomputed.
 
     Returns
     -------
@@ -592,21 +658,52 @@ def iteration_fast(exp_k, nu, config, bmats_up, bmats_dn, gf_up, gf_dn, times):
     accepted = 0
     sites = np.arange(config.shape[0])
     # Iterate over all time-steps
-    for t in times:
+    for t in range(config.shape[1]):
         # Iterate over all lattice sites randomly
         np.random.shuffle(sites)
         for i in sites:
-            # Propose update by flipping spin in confguration
-            d = compute_acceptance_fast(nu, config, gf_up, gf_dn, i, t)
+            # Propose spin-flip in confguration
+            # ---------------------------------
+            arg = -2 * nu * config[i, t]
+            alpha_up = np.expm1(UP * arg)
+            alpha_dn = np.expm1(DN * arg)
+            d_up = 1 + (1 - gf_up[i, i]) * alpha_up
+            d_dn = 1 + (1 - gf_dn[i, i]) * alpha_dn
+
             # Check if move is accepted
-            r = random.random()
-            if r < d / (d + 1):
+            if np.random.random() < abs(d_up * d_dn):
                 # Move accepted
                 accepted += 1
                 # Update Green's functions *before* updating configuration
-                update_greens(nu, config, gf_up, gf_dn, i, t)
-                # Update configuration and B-matrices *after* GF update
-                update(exp_k, nu, config, bmats_up, bmats_dn, i, t)
-        # Wrap Green's function between time steps
-        wrap_greens(bmats_up, bmats_dn, gf_up, gf_dn, t)
+                update_greens_blas(nu, config, gf_up, gf_dn, i, t)
+                # Actually update configuration and B-matrices *after* GF update
+                config[i, t] = -config[i, t]
+
+        # Update time-step matrix of the current time slice before next time slice.
+        # Can be done outside the inner loop over the lattice sites since it only uses
+        # the i-th spin and i-th row/column of the Green's functions.
+        update_timestep_mats(exp_k, nu, config, bmats_up, bmats_dn, t)
+
+        # Recompute Green's function for next slice `t+1` after several time slices,
+        # otherwise wrape Green's functions up to next time slice.
+        if (t + 1) % nwraps == 0:
+            recompute_greens(bmats_up, bmats_dn, gf_up, gf_dn, t + 1)
+        else:
+            wrap_up_greens(bmats_up, bmats_dn, gf_up, gf_dn, t)
     return accepted
+
+
+@njit(
+    (gmat_t, gmat_t, int64, float64[:], float64[:], float64[:], float64[:]),
+    **jkwargs
+)
+def accumulate_measurements(gf_up, gf_dn, sweeps, n_up, n_dn, n2, mz):
+    _n_up = 1 - np.diag(gf_up)
+    _n_dn = 1 - np.diag(gf_dn)
+    _n_double = _n_up * _n_dn
+    _moment = _n_up + _n_dn - 2 * _n_double
+
+    n_up += _n_up / sweeps
+    n_dn += _n_dn / sweeps
+    n2 += _n_double / sweeps
+    mz += _moment / sweeps
