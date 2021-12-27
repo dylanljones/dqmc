@@ -20,8 +20,8 @@ from .dqmc import (     # noqa: F401
     compute_greens,
     iteration_fast,
     accumulate_measurements,
-    recompute_greens_stable,    # noqa: F401
-    recompute_greens            # noqa: F401
+    recompute_greens_stable,
+    recompute_greens
 )
 
 logger = logging.getLogger("dqmc")
