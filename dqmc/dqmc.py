@@ -555,21 +555,20 @@ def update_greens_blas(nu, config, gf_up, gf_dn, i, t):
            of the Hubbard Model”, in Series in Contemporary Applied Mathematics,
            Vol. 12 (June 2009), p. 1.
     """
-    # Compute alphas
+    # Compute alphas and determinants
     arg = -2 * nu * config[i, t]
     alpha_up = np.expm1(UP * arg)
     alpha_dn = np.expm1(DN * arg)
-
+    # d_up = 1 + (1 - gf_up[i, i]) * alpha_up
+    # d_dn = 1 + (1 - gf_dn[i, i]) * alpha_dn
     # Copy i-th column of (G-1)
     u_up = np.copy(gf_up[:, i])
     u_dn = np.copy(gf_dn[:, i])
     u_up[i] -= 1.0
     u_dn[i] -= 1.0
-
     # Copy i-th row of G
-    w_up = np.copy(gf_up[i, :])
-    w_dn = np.copy(gf_dn[i, :])
-
+    w_up = gf_up[i, :]
+    w_dn = gf_dn[i, :]
     # Perform rank 1 update of GF
     blas_dger(alpha_up / (1.0 - alpha_up * u_up[i]), u_up, w_up, gf_up)
     blas_dger(alpha_dn / (1.0 - alpha_dn * u_dn[i]), u_dn, w_dn, gf_dn)
@@ -577,7 +576,7 @@ def update_greens_blas(nu, config, gf_up, gf_dn, i, t):
 
 @njit(void(bmat_t, bmat_t, gmat_t, gmat_t, int64), **jkwargs)
 def wrap_up_greens(bmats_up, bmats_dn, gf_up, gf_dn, t):
-    r"""Wraps the Green's functions between the time step :math:'t' and :math:'t+1'.
+    r"""Wraps the Green's functions from the time step :math:'t' up to :math:'t+1'.
 
     This method has to be called after a time-step in order to prepare the
     Green's function for the next hogher time slice.
@@ -603,7 +602,7 @@ def wrap_up_greens(bmats_up, bmats_dn, gf_up, gf_dn, t):
 
 @njit(void(bmat_t, bmat_t, gmat_t, gmat_t, int64), **jkwargs)
 def wrap_down_greens(bmats_up, bmats_dn, gf_up, gf_dn, t):
-    r"""Wraps the Green's functions between the time step :math:'t' and :math:'t-1'.
+    r"""Wraps the Green's functions from the time step :math:'t' down to :math:'t-1'.
 
     This method has to be called after a time-step in order to prepare the
     Green's function for the next lower time slice.
@@ -621,7 +620,7 @@ def wrap_down_greens(bmats_up, bmats_dn, gf_up, gf_dn, t):
     t : int
         The time-step index :math:'t' of the last iteration over all sites.
     """
-    idx = t % bmats_up.shape[0]
+    idx = t - 1
     b_up = bmats_up[idx]
     b_dn = bmats_dn[idx]
     gf_up[:, :] = np.dot(np.dot(la.inv(b_up), gf_up), b_up)
@@ -660,10 +659,6 @@ def iteration_fast(exp_k, nu, config, bmats_up, bmats_dn, gf_up, gf_dn, nwraps=8
     sites = np.arange(config.shape[0])
     # Iterate over all time-steps
     for t in range(config.shape[1]):
-        # Wrap Green's function between time steps
-        if t % nwraps == 0:
-            wrap_up_greens(bmats_up, bmats_dn, gf_up, gf_dn, t)
-
         # Iterate over all lattice sites randomly
         np.random.shuffle(sites)
         for i in sites:
@@ -679,23 +674,22 @@ def iteration_fast(exp_k, nu, config, bmats_up, bmats_dn, gf_up, gf_dn, nwraps=8
             if np.random.random() < abs(d_up * d_dn):
                 # Move accepted
                 accepted += 1
-
                 # Update Green's functions *before* updating configuration
-                # --------------------------------------------------------
                 update_greens_blas(nu, config, gf_up, gf_dn, i, t)
-
                 # Actually update configuration and B-matrices *after* GF update
-                # --------------------------------------------------------------
                 config[i, t] = -config[i, t]
-                update_timestep_mats(exp_k, nu, config, bmats_up, bmats_dn, t)
 
-        # update_timestep_mats(exp_k, nu, config, bmats_up, bmats_dn, t)
+        # Update time-step matrix of the current time slice before next time slice.
+        # Can be done outside the inner loop over the lattice sites since it only uses
+        # the i-th spin and i-th row/column of the Green's functions.
+        update_timestep_mats(exp_k, nu, config, bmats_up, bmats_dn, t)
 
-        # Recompute Green's function after several time slices,
-        # otherwise wrape Green's functions up to next time slice
+        # Recompute Green's function for next slice `t+1` after several time slices,
+        # otherwise wrape Green's functions up to next time slice.
         if (t + 1) % nwraps == 0:
             recompute_greens(bmats_up, bmats_dn, gf_up, gf_dn, t + 1)
-
+        else:
+            wrap_up_greens(bmats_up, bmats_dn, gf_up, gf_dn, t)
     return accepted
 
 
