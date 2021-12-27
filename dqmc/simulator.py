@@ -10,6 +10,7 @@
 
 """Main DQMC simulator object, see `dqmc` for implementation of the DQMC methods."""
 
+import time
 import logging
 import numpy as np
 from .model import hubbard_hypercube
@@ -18,6 +19,7 @@ from .dqmc import (     # noqa: F401
     init_qmc,
     compute_timestep_mats,
     compute_greens,
+    compute_greens_stable,
     iteration_fast,
     accumulate_measurements,
     recompute_greens_stable,
@@ -69,16 +71,16 @@ class DQMC:
         self.local_moment = np.zeros(num_sites, dtype=np.float64)
 
     def greens(self):
-        return compute_greens(self.bmats_up, self.bmats_dn, 0)
-        # return compute_greens_stable(self.bmats_up, self.bmats_dn, 0, self.prod_len)
-
-    def get_greens(self):
-        return self._gf_up, self._gf_dn
+        # return compute_greens(self.bmats_up, self.bmats_dn, 0)
+        return compute_greens_stable(self.bmats_up, self.bmats_dn, 0, self.prod_len)
 
     def recompute_greens(self):   # noqa: F811
         # recompute_greens(self.bmats_up, self.bmats_dn, self._gf_up, self._gf_dn, t=0)
         recompute_greens_stable(self.bmats_up, self.bmats_dn, self._gf_up, self._gf_dn,
                                 t=0, prod_len=self.prod_len)
+
+    def get_greens(self):
+        return self._gf_up, self._gf_dn
 
     def iteration(self):
         accepted = iteration_fast(
@@ -106,18 +108,6 @@ class DQMC:
                                 self.n_dn,
                                 self.n_double,
                                 self.local_moment)
-        # scale = 1 / num_measurements
-        #
-        # gf_up, gf_dn = self.get_greens()
-        # n_up = 1 - np.diag(gf_up)
-        # n_dn = 1 - np.diag(gf_dn)
-        # n_double = n_up * n_dn
-        # moment = n_up + n_dn - 2 * n_double
-        #
-        # self.n_up += n_up * scale
-        # self.n_dn += n_dn * scale
-        # self.n_double += n_double * scale
-        # self.local_moment += moment * scale
 
     def warmup(self, sweeps):
         self.it = 0
@@ -140,10 +130,28 @@ class DQMC:
                 out += callback(gf_up, gf_dn, *args, **kwargs)
 
             self.it += 1
+        return out
 
-    def simulate(self, warmup, measure, callback=None, *args, **kwargs):
-        self.warmup(warmup)
-        return self.measure(measure, callback, *args, **kwargs)
+    def simulate(self, num_equil, num_sampl, callback=None, *args, **kwargs):
+        total_sweeps = num_equil + num_sampl
+        t0 = time.perf_counter()
+
+        logger.info("Running %s equilibrium sweeps...", num_equil)
+        t0_equil = time.perf_counter()
+        self.warmup(num_equil)
+        t_equil = time.perf_counter() - t0_equil
+
+        logger.info("Running %s sampling sweeps...", num_sampl)
+        t0_sampl = time.perf_counter()
+        results = self.measure(num_sampl, callback, *args, **kwargs)
+        t_sampl = time.perf_counter() - t0_sampl
+
+        t = time.perf_counter() - t0
+        logger.info("%s iterations completed!", total_sweeps)
+        logger.info("Equil CPU time: %6.1fs  (%.4f s/it)", t_equil, t_equil / num_equil)
+        logger.info("Sampl CPU time: %6.1fs  (%.4f s/it)", t_sampl, t_sampl / num_sampl)
+        logger.info("Total CPU time: %6.1fs  (%.4f s/it)", t, t / total_sweeps)
+        return results
 
 
 def run_dqmc(shape, u, eps, hop, mu, beta, num_timesteps, warmup, measure, callback):
