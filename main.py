@@ -26,6 +26,7 @@ def log_parameters(p):
     logger.info("       eps: %s", p.eps)
     logger.info("        mu: %s", p.mu)
     logger.info("      beta: %s", p.beta)
+    logger.info("      temp: %s", 1 / p.beta)
     logger.info(" time-step: %s", p.dt)
     logger.info("         L: %s", p.num_timesteps)
     logger.info("   nrecomp: %s", p.num_recomp)

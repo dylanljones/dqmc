@@ -45,19 +45,24 @@ python main.py examples/chain.txt
    The hopping energy of the Hubbard model.
 - `mu`
    The chemical potential of the Hubbard model. Set to `U/2` for half filling.
-- `dt`
+- `dt` (optional)
    The imaginary time step size.
+- `beta` (optional)
+   The inverse temperature. Can be set instead of `dt`.
+- `temp` (optional)
+   The temperature. Can be set instead of `dt`.
 - `L`
    The number of imaginary time slices
 - `nequil`
    The number of warmup-sweeps
 - `nsampl`
    The number of measurement-sweeps
-- `nrecomp`
-   The number of time slice wraps after which the Green's functions are recomputed
-- `prodLen`
+- `nrecomp` (optional)
+   The number of time slice wraps after which the Green's functions are recomputed.
+   The default is `1`.
+- `prodLen` (optional)
    The number of explicit matrix products used for the stabilized matrix product
-   via ASvQRD
+   via ASvQRD. The default is `1`.
 
 ## Usage
 

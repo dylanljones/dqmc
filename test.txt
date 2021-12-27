@@ -1,11 +1,11 @@
-shape       6, 6
+shape       5, 5
 U           6
 eps         0
 t           1
 mu          3
-dt          0.05
-L           40
+temp        0.2
+L           64
 nequil      512
-nsampl      1024
+nsampl      2048
 nrecomp     8
-prodLen     8
+prodLen     16

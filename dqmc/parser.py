@@ -46,6 +46,8 @@ def parse(file):
     t = 0.
     mu = 0.
     dt = 0.
+    beta = 0.
+    temp = 0.
     num_timesteps = 0
     warm = 0
     meas = 0
@@ -84,8 +86,16 @@ def parse(file):
             num_recomp = int(val)
         elif head == "prodlen":
             prod_len = int(val)
+        elif head == "beta":
+            beta = float(val)
+        elif head == "temp":
+            temp = float(val)
         else:
             logger.warning("Parameter %s of file '%s' not recognized!", head, file)
+    if dt == 0:
+        if temp:
+            beta = 1 / temp
+        dt = beta / num_timesteps
 
     return Parameters(shape, u, eps, t, mu, dt, num_timesteps, warm, meas,
                       num_recomp, prod_len)
