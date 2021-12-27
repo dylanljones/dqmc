@@ -18,15 +18,15 @@ formatter = logging.Formatter(frmt, datefmt="%H:%M:%S")
 
 # Set up console logger
 sh = logging.StreamHandler()
-sh.setLevel(logging.DEBUG)
+sh.setLevel(logging.INFO)
 sh.setFormatter(formatter)
 logger.addHandler(sh)
 
 # Set up file logger
-# fh = logging.FileHandler("dqmc.log", mode="w")
-# fh.setLevel(logging.DEBUG)
-# fh.setFormatter(formatter)
-# logger.addHandler(fh)
+fh = logging.FileHandler("dqmc.log", mode="w")
+fh.setLevel(logging.DEBUG)
+fh.setFormatter(formatter)
+logger.addHandler(fh)
 
 # Set logging level
 logger.setLevel(logging.WARNING)
