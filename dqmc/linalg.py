@@ -349,6 +349,22 @@ def reconstruct_qrp(q, r, p):
     return np.dot(np.dot(q, r), p.T)
 
 
+@njit(float64[:, :](float64[:, :], float64[:, :], float64[:, :]))
+def _asvqrd_prod_construct(q, d, t_prod):
+    # Compute matrices D_b and D_s, such that D_L = D_b D_s
+    diagb = np.diag(d)
+    diags = np.copy(diagb)
+    maskb = np.abs(diagb) > 1
+    diagb[~maskb] = 1.0
+    diags[maskb] = 1.0
+    db = np.diag(diagb)
+    ds = np.diag(diags)
+
+    # calculate (D_b^{-1} Q^T + D_s T)^{-1} (D_b^{-1} Q^T)
+    db_inv_qt = np.dot(np.linalg.inv(db), q.T)
+    return np.dot(np.linalg.inv(db_inv_qt + np.dot(ds, t_prod)), db_inv_qt)
+
+
 @njit(
     float64[:, :, :](float64[:, :, ::1], int64, int64),
     fastmath=True, nogil=True, cache=True
@@ -447,20 +463,8 @@ def asvqrd_prod_0beta(matrices, t=0, prod_len=1):
         t_prod = np.dot(t, t_prod)
 
     # Compute matrices D_b and D_s, such that D_L = D_b D_s
-    diag = np.diag(d)
-    db = np.eye(len(d))
-    ds = np.eye(len(d))
-    for i in range(len(d)):
-        absdiag = abs(diag[i])
-        if absdiag > 1:
-            db[i, i] = diag[i]
-        else:
-            ds[i, i] = diag[i]
-
-    db_inv = la.inv(db)
-    qt = q.T
-    # calculate (D_b^{-1} Q^T + D_s T)^{-1} (D_b^{-1} Q^T)
-    return np.dot(la.inv(np.dot(db_inv, qt) + np.dot(ds, t_prod)), np.dot(db_inv, qt))
+    # and calculate (D_b^{-1} Q^T + D_s T)^{-1} (D_b^{-1} Q^T)
+    return _asvqrd_prod_construct(q, d, t_prod)
 
 
 @njit(
@@ -561,17 +565,5 @@ def asvqrd_prod_beta0(matrices, prod_len, t):
         t_prod = np.dot(t, t_prod)
 
     # Compute matrices D_b and D_s, such that D_L = D_b D_s
-    diag = np.diag(d)
-    db = np.eye(len(d))
-    ds = np.eye(len(d))
-    for i in range(len(d)):
-        absdiag = abs(diag[i])
-        if absdiag > 1:
-            db[i, i] = diag[i]
-        else:
-            ds[i, i] = diag[i]
-
-    db_inv = la.inv(db)
-    qt = q.T
-    # calculate (D_b^{-1} Q^T + D_s T)^{-1} (D_b^{-1} Q^T)
-    return np.dot(la.inv(np.dot(db_inv, qt) + np.dot(ds, t_prod)), np.dot(db_inv, qt))
+    # and calculate (D_b^{-1} Q^T + D_s T)^{-1} (D_b^{-1} Q^T)
+    return _asvqrd_prod_construct(q, d, t_prod)
