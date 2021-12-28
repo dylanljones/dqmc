@@ -24,6 +24,11 @@ or the `setup.py` script
 python setup.py install
 ````
 
+To compile the Fortran source code, `cd` into `/dqmc/src` and run
+````commandline
+python -m numpy.f2py -llapack -lblas -c qrp.f90 -m qrp
+````
+
 
 ## Quickstart
 
