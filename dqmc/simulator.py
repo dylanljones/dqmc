@@ -13,8 +13,9 @@
 import time
 import logging
 import numpy as np
+from typing import Union
+from dataclasses import dataclass
 from .model import hubbard_hypercube
-from .mp import run_parallel, prun_parallel
 from .dqmc import (     # noqa: F401
     init_qmc,
     compute_timestep_mats,
@@ -27,6 +28,89 @@ from .dqmc import (     # noqa: F401
 )
 
 logger = logging.getLogger("dqmc")
+
+
+@dataclass
+class Parameters:
+
+    shape: Union[int, tuple]
+    u: float
+    eps: float
+    t: float
+    mu: float
+    dt: float
+    num_timesteps: int
+    num_equil: int = 512
+    num_sampl: int = 2048
+    num_recomp: int = 1
+    prod_len: int = 1
+    seed: int = 0
+
+    @property
+    def beta(self):
+        return self.num_timesteps * self.dt
+
+
+def parse(file):
+    shape = 0
+    u = 0.
+    eps = 0.
+    t = 0.
+    mu = 0.
+    dt = 0.
+    beta = 0.
+    temp = 0.
+    num_timesteps = 0
+    warm = 0
+    meas = 0
+    num_recomp = 0
+    prod_len = 1
+
+    logger.info("Reading file %s...", file)
+    with open(file, "r") as fh:
+        text = fh.read()
+    lines = text.splitlines(keepends=False)
+    for line in lines:
+        if line.strip().startswith("#"):
+            continue
+
+        head, val = line.split(maxsplit=1)
+        head = head.lower()
+        if head == "shape":
+            shape = tuple(int(x) for x in val.split(", "))
+        elif head == "u":
+            u = float(val)
+        elif head == "eps":
+            eps = float(val)
+        elif head == "t":
+            t = float(val)
+        elif head == "mu":
+            mu = float(val)
+        elif head == "dt":
+            dt = float(val)
+        elif head == "l":
+            num_timesteps = int(val)
+        elif head == "nequil":
+            warm = int(val)
+        elif head == "nsampl":
+            meas = int(val)
+        elif head == "nrecomp":
+            num_recomp = int(val)
+        elif head == "prodlen":
+            prod_len = int(val)
+        elif head == "beta":
+            beta = float(val)
+        elif head == "temp":
+            temp = float(val)
+        else:
+            logger.warning("Parameter %s of file '%s' not recognized!", head, file)
+    if dt == 0:
+        if temp:
+            beta = 1 / temp
+        dt = beta / num_timesteps
+
+    return Parameters(shape, u, eps, t, mu, dt, num_timesteps, warm, meas,
+                      num_recomp, prod_len)
 
 
 class DQMC:
@@ -154,18 +238,11 @@ class DQMC:
         return results
 
 
-def run_dqmc(shape, u, eps, hop, mu, beta, num_timesteps, warmup, measure, callback):
-    model = hubbard_hypercube(shape, u, eps, hop, mu, beta, periodic=True)
-    dqmc = DQMC(model, num_timesteps)
+def run_dqmc(p, callback=None):
+    model = hubbard_hypercube(p.shape, p.u, p.eps, p.t, p.mu, p.beta, periodic=True)
+    dqmc = DQMC(model, p.num_timesteps, p.num_recomp, p.prod_len, seed=p.seed)
     try:
-        return dqmc.simulate(warmup, measure, callback=callback)
+        extra_results = dqmc.simulate(p.num_equil, p.num_sampl, callback=callback)
     except np.linalg.LinAlgError:
-        return np.nan
-
-
-def run_dqmc_parallel(params, max_workers=None):
-    return run_parallel(run_dqmc, params, max_workers)
-
-
-def prun_dqmc_parallel(params, max_workers=None):
-    return prun_parallel(run_dqmc, params, max_workers)
+        return ()
+    return dqmc.n_up, dqmc.n_dn, dqmc.n_double, dqmc.local_moment, extra_results

@@ -10,108 +10,74 @@
 
 """Multiprocessing tools."""
 
-import time
 import logging
 import psutil
+import numpy as np  # noqa: F401
 import concurrent.futures
 from tqdm import tqdm
+from .simulator import run_dqmc, Parameters
 
 logger = logging.getLogger("dqmc")
 
 
-def distribute(*args):
-    """Distribute arguments to tuple of arguments."""
-    def _is_multi(x):
-        return hasattr(x, "__len__") and not isinstance(x, (tuple, str))
+# noinspection PyShadowingNames
+def map_params(p, **kwargs):
+    """Maps arrays to the attributes of a default Parameter object.
 
-    # Check for argument lists and store max length
-    num = 1
-    for arg in args:
-        if _is_multi(arg):
-            num = max(num, len(arg))
+    Parameters
+    ----------
+    p : Parameters
+        The default parameters. A copy of the parameters is created
+        before replacing the attributes from the keyword arguments
+    **kwargs
+        Keyword arguments containing arrays of values that are mapped to the
+        attributes of the default parameters. If multiple keyword arguments
+        are given the length of all arrays have to match.
+    Returns
+    -------
+    params : list of Parameters
+        The parameters with the mapped keyword arguments.
 
-    # Expand all arguments to equal length
-    tmp = list()
-    for arg in args:
-        if _is_multi(arg):
-            if len(arg) != num:
-                raise ValueError(f"Parameter list {arg} does not contain "
-                                 f"{num} arguments")
-            item = arg
+    Examples
+    --------
+    >>> p = Parameters(10, 4, 0, 1, 2, 0.05, 40)  # Default parameters
+    >>> u = np.arange(1, 3, 0.5)  # Interactions
+    >>> params = map_params(p, u=u)  # Map interaction array to parameters
+    >>> [p.u for p in params]  # Interaction has mapped values
+    [1.0, 1.5, 2.0, 2.5]
+    >>> [p.t for p in params]  # Hopping is constant for all parameters
+    [1, 1, 1, 1]
+    """
+    num_params = 0
+    # Check number of values for each keyword argument
+    for key, vals in kwargs.items():
+        num_vals = len(vals)
+        if num_params == 0:
+            num_params = num_vals
+        elif num_vals != num_params:
+            raise ValueError(f"Length {num_vals} of keyword argument {key} does not "
+                             f"match the previous lengths {num_params}")
+    # Map parameters
+    params = list()
+    for i in range(num_params):
+        # Copy default parameters
+        p_new = Parameters(**p.__dict__)
+        # Update new parameters with given kwargs
+        for key, vals in kwargs.items():
+            val = vals[i]
+            setattr(p_new, key, val)
+        params.append(p_new)
+    return params
+
+
+def run_dqmc_parallel(params, callback=None, max_workers=None, progress=True):
+    if max_workers is None or max_workers == -1:
+        max_workers = psutil.cpu_count(logical=True)
+
+    args = [(p, callback) for p in params]
+    with concurrent.futures.ProcessPoolExecutor(max_workers) as executor:
+        results = executor.map(run_dqmc, *zip(*args))
+        if progress:
+            return list(tqdm(results, total=len(args)))
         else:
-            item = [arg for _ in range(num)]
-        tmp.append(item)
-
-    # transpose argument list to set of arguments
-    out = list()
-    for i in range(num):
-        out.append(tuple([arg[i] for arg in tmp]))
-    return tuple(out)
-
-
-class ProcessPool:
-
-    def __init__(self, max_workers=None):
-        if max_workers is None:
-            max_workers = psutil.cpu_count(logical=True)
-        logger.info("Using %s processes", max_workers)
-
-        self.executor = concurrent.futures.ProcessPoolExecutor(max_workers)
-        self.jobs = list()
-
-    @property
-    def num_jobs(self):
-        return len(self.jobs)
-
-    def submit(self, fn, *args, callback=None):
-        logger.info("Submitting job %s with args: %s", fn.__name__, args)
-
-        job = self.executor.submit(fn, *args)
-        if callback is not None:
-            job.add_done_callback(callback)
-        self.jobs.append(job)
-        return job
-
-    def map(self, fn, args):
-        return self.executor.map(fn, *zip(*args))
-
-    def distribute(self, fn, params):
-        args = distribute(*params)
-        return self.executor.map(fn, *zip(*args))
-
-    def pdistribute(self, fn, params):
-        args = distribute(*params)
-        return list(tqdm(self.executor.map(fn, *zip(*args)), total=len(args)))
-
-    def stop(self, wait=True):
-        self.executor.shutdown(wait)
-
-    def complete_all(self):
-        t0 = time.perf_counter()
-
-        logger.info("Waiting for %s jobs to complete", self.num_jobs)
-        results = [f.result() for f in concurrent.futures.as_completed(self.jobs)]
-
-        t = time.perf_counter() - t0
-        logger.info("--------------------------")
-        logger.info("Total time:   %10.2f s", t)
-        logger.info("Process time: %10.2f s", t/self.num_jobs)
-        logger.info("--------------------------")
-
-        return results
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        self.stop()
-
-
-def run_parallel(fn, params, max_workers=None):
-    with ProcessPool(max_workers) as executor:
-        return executor.distribute(fn, params)
-
-
-def prun_parallel(fn, params, max_workers=None):
-    with ProcessPool(max_workers) as executor:
-        return executor.pdistribute(fn, params)
+            return list(results)

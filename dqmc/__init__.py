@@ -10,8 +10,8 @@
 
 from .logging import logger
 from .model import HubbardModel, hubbard_hypercube
-from .mp import ProcessPool, run_parallel
-from .simulator import DQMC, run_dqmc, run_dqmc_parallel, prun_dqmc_parallel
+from .simulator import DQMC, run_dqmc, parse, Parameters
+from .mp import map_params, run_dqmc_parallel
 
 from . import _version
 __version__ = _version.get_versions()['version']
