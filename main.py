@@ -89,11 +89,11 @@ def log_parameters(p):
     logger.info("")
 
 
-def log_results(sim):
-    n_up = np.mean(sim.n_up)
-    n_dn = np.mean(sim.n_dn)
-    n_double = np.mean(sim.n_double)
-    local_moment = np.mean(sim.local_moment)
+def log_results(*results):
+    n_up = np.mean(results[0])
+    n_dn = np.mean(results[1])
+    n_double = np.mean(results[2])
+    local_moment = np.mean(results[3])
 
     logger.info("_" * 60)
     logger.info("Simulation results")
@@ -103,6 +103,8 @@ def log_results(sim):
     logger.info(" Spin-down density: %8.4f", n_dn)
     logger.info("  Double occupancy: %8.4f", n_double)
     logger.info("      Local moment: %8.4f", local_moment)
+    if results[4]:
+        logger.info("   Callback results: %s", results[4])
     logger.info("")
 
 

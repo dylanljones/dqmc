@@ -57,7 +57,7 @@ def init_configuration(num_sites: int, num_timesteps: int) -> np.ndarray:
     Returns
     -------
     config : (N, L) np.ndarray
-        The array representing the configuration or or Hubbard-Stratonovich field.
+        The array representing the configuration or Hubbard-Stratonovich field.
     """
     # samples = random.choices([-1, +1], k=num_sites * num_timesteps)
     samples = np.random.choice([-1, +1], size=num_sites * num_timesteps)
@@ -84,7 +84,7 @@ def init_qmc(model, num_timesteps, seed):
     nu : float
         The parameter ν defined by :math:'\cosh(ν) = e^{U Δτ / 2}'.
     config : (N, L) np.ndarray
-        The array representing the configuration or or Hubbard-Stratonovich field.
+        The array representing the configuration or Hubbard-Stratonovich field.
     """
 
     np.random.seed(seed)
@@ -391,7 +391,7 @@ def iteration_det(exp_k, nu, config, bmats_up, bmats_dn, old_det, times):
         # Iterate over all lattice sites
         np.random.shuffle(sites)
         for i in sites:
-            # Propose update by flipping spin in confguration
+            # Propose update by flipping spin in configuration
             update(exp_k, nu, config, bmats_up, bmats_dn, i, t)
             # Compute determinant product of the new configuration
             m_up, m_dn = compute_m_matrices(bmats_up, bmats_dn, t)
@@ -662,8 +662,7 @@ def iteration_fast(exp_k, nu, config, bmats_up, bmats_dn, gf_up, gf_dn, nwraps=8
         # Iterate over all lattice sites randomly
         np.random.shuffle(sites)
         for i in sites:
-            # Propose spin-flip in confguration
-            # ---------------------------------
+            # Propose spin-flip in configuration
             arg = -2 * nu * config[i, t]
             alpha_up = np.expm1(UP * arg)
             alpha_dn = np.expm1(DN * arg)
@@ -685,7 +684,7 @@ def iteration_fast(exp_k, nu, config, bmats_up, bmats_dn, gf_up, gf_dn, nwraps=8
         update_timestep_mats(exp_k, nu, config, bmats_up, bmats_dn, t)
 
         # Recompute Green's function for next slice `t+1` after several time slices,
-        # otherwise wrape Green's functions up to next time slice.
+        # otherwise wrap Green's functions up to next time slice.
         if (t + 1) % nwraps == 0:
             recompute_greens(bmats_up, bmats_dn, gf_up, gf_dn, t + 1)
         else:
