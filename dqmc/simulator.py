@@ -23,7 +23,6 @@ from .dqmc import (     # noqa: F401
     compute_greens_qrd,
     init_greens,
     dqmc_iteration,
-    dqmc_iteration_py,
     accumulate_measurements,
 )
 
@@ -195,7 +194,8 @@ class DQMC:
             self.bmats_dn,
             self._gf_up,
             self._gf_dn,
-            self.num_recomp
+            self.num_recomp,
+            self.prod_len
         )
         # Compute and save acceptance ratio
         acc_ratio = accepted / self.config.size
