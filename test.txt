@@ -3,9 +3,10 @@ U           6
 eps         0
 t           1
 mu          3
-temp        0.2
-L           64
+temp        0.5
+L           40
 nequil      512
-nsampl      2048
+nsampl      512
 nrecomp     8
-prodLen     16
+prodLen     8
+freshSampl  0

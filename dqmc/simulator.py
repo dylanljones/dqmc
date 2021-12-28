@@ -23,6 +23,7 @@ from .dqmc import (     # noqa: F401
     compute_greens_qrd,
     init_greens,
     dqmc_iteration,
+    dqmc_iteration_py,
     accumulate_measurements,
 )
 
@@ -42,6 +43,7 @@ class Parameters:
     num_equil: int = 512
     num_sampl: int = 2048
     num_recomp: int = 1
+    sampl_recomp: int = 1
     prod_len: int = 1
     seed: int = 0
 
@@ -63,6 +65,7 @@ def parse(file):
     warm = 0
     meas = 0
     num_recomp = 0
+    sampl_recomp = 1
     prod_len = 1
 
     logger.info("Reading file %s...", file)
@@ -70,7 +73,10 @@ def parse(file):
         text = fh.read()
     lines = text.splitlines(keepends=False)
     for line in lines:
-        if line.strip().startswith("#"):
+        if "#" in line:
+            text, comm = line.strip().split("#")
+            line = text.strip()
+        if not line:
             continue
 
         head, val = line.split(maxsplit=1)
@@ -95,6 +101,8 @@ def parse(file):
             meas = int(val)
         elif head == "nrecomp":
             num_recomp = int(val)
+        elif head == "freshsampl":
+            sampl_recomp = int(val)
         elif head == "prodlen":
             prod_len = int(val)
         elif head == "beta":
@@ -109,13 +117,14 @@ def parse(file):
         dt = beta / num_timesteps
 
     return Parameters(shape, u, eps, t, mu, dt, num_timesteps, warm, meas,
-                      num_recomp, prod_len)
+                      num_recomp, sampl_recomp, prod_len)
 
 
 class DQMC:
     """Main DQMC simulator instance."""
 
-    def __init__(self, model, num_timesteps, num_recomp=1, prod_len=1, seed=None):
+    def __init__(self, model, num_timesteps, num_recomp=1, prod_len=1, seed=None,
+                 sampl_recomp=True):
         if prod_len > 0 and num_timesteps % prod_len != 0:
             raise ValueError("Number of time steps not a multiple of `prod_len`!")
         if num_timesteps % num_recomp != 0:
@@ -126,6 +135,7 @@ class DQMC:
         # random.seed(seed)
 
         self.num_recomp = num_recomp
+        self.sampl_recomp = sampl_recomp
         self.prod_len = prod_len
 
         self.model = model
@@ -145,7 +155,6 @@ class DQMC:
         # Initialization
         self._gf_up, self._gf_dn = init_greens(self.bmats_up, self.bmats_dn, 0,
                                                self.prod_len)
-        self.compute_greens()
 
         # Measurement data
         # ----------------
@@ -194,8 +203,11 @@ class DQMC:
         logger.debug("[%s] %3d Ratio: %.2f", self.status, self.it, acc_ratio)
 
     def accumulate_measurements(self, num_measurements):
-        # Recompute Green's functions
-        self.compute_greens()
+        if self.sampl_recomp:
+            # Recompute Green's functions before measurements
+            self.compute_greens()
+
+        # Accumulate measurements of default observables
         accumulate_measurements(
             num_measurements,
             self._gf_up,
@@ -218,14 +230,12 @@ class DQMC:
         self.status = "meas"
         for sweep in range(sweeps):
             self.iteration()
-            self.compute_greens()
             # perform measurements
             self.accumulate_measurements(sweeps)
             # user measurement callback
             if callback is not None:
                 gf_up, gf_dn = self.get_greens()
                 out += callback(gf_up, gf_dn, *args, **kwargs)
-
             self.it += 1
         return out
 
@@ -253,7 +263,8 @@ class DQMC:
 
 def run_dqmc(p, callback=None):
     model = hubbard_hypercube(p.shape, p.u, p.eps, p.t, p.mu, p.beta, periodic=True)
-    dqmc = DQMC(model, p.num_timesteps, p.num_recomp, p.prod_len, seed=p.seed)
+    dqmc = DQMC(model, p.num_timesteps, p.num_recomp, p.prod_len, p.seed,
+                p.sampl_recomp)
     try:
         extra_results = dqmc.simulate(p.num_equil, p.num_sampl, callback=callback)
     except np.linalg.LinAlgError:

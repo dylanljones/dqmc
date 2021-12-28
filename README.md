@@ -80,6 +80,9 @@ for more information.
 - `prodLen` (optional)
    The number of explicit matrix products used for the stabilized matrix product
    via ASvQRD. The default is `1`.
+- `reSampl`  (optional)
+   Integer flag if the Green's functions are recomputed before performing
+   measurements (`1`) or not (`0`). The default is `1`.
 
 ## Usage
 
