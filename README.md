@@ -76,13 +76,13 @@ for more information.
    The number of measurement-sweeps
 - `nrecomp` (optional)
    The number of time slice wraps after which the Green's functions are recomputed.
-   The default is `1`.
+   The default is 1.
 - `prodLen` (optional)
    The number of explicit matrix products used for the stabilized matrix product
-   via ASvQRD. If `0` no stabilization is performed. The default is `1`.
+   via ASvQRD. If 0 no stabilization is performed. The default is 1.
 - `freshSampl`  (optional)
    Integer flag if the Green's functions are recomputed before performing
-   measurements (`1`) or not (`0`). The default is `1`.
+   measurements (1) or not (0). The default is 1.
 
 ## Usage
 
