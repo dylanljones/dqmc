@@ -6,7 +6,6 @@
 
 from .qrp import qrp as _qrp  # noqa
 import numpy as np
-from numba import njit
 
 
 def qrp(a):
@@ -18,5 +17,5 @@ def qrp(a):
     _qrp(m, n, q, r, jpvt)
     # Construct permutation matrix
     p = np.zeros(q.shape, dtype=np.int64)
-    p[jpvt-1, np.arange(n)] = 1
+    p[jpvt - 1, np.arange(n)] = 1
     return q, r, p

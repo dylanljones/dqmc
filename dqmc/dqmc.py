@@ -22,7 +22,6 @@ References
 """
 
 import math
-import random
 import logging
 import numpy as np
 import numpy.linalg as la
@@ -257,8 +256,8 @@ def compute_m_matrices(bmats_up, bmats_dn, t):
     return m_up, m_dn
 
 
-@njit(nt.UniTuple(gmat_t, 2)(bmat_t, bmat_t, int64), **jkwargs)
-def compute_greens(bmats_up, bmats_dn, t):
+@njit((bmat_t, bmat_t, gmat_t, gmat_t, int64), **jkwargs)
+def compute_greens(bmats_up, bmats_dn, gf_up, gf_dn, t):
     r"""Computes the Green's functions for both spins.
 
     Parameters
@@ -267,30 +266,19 @@ def compute_greens(bmats_up, bmats_dn, t):
         The spin-up time step matrices.
     bmats_dn : (L, N, N) np.ndarray
         The spin-down time step matrices.
+    gf_up : np.ndarray
+        Output array for the spin-up Green's function.
+    gf_dn : np.ndarray
+        Output array for the spin-down Green's function.
     t : int
         The current time-step index :math:'t'.
-
-    Returns
-    -------
-    gf_up : np.ndarray
-        The spin-up Green's function.
-    gf_dn : np.ndarray
-        The spin-down Green's function.
     """
     m_up, m_dn = compute_m_matrices(bmats_up, bmats_dn, t)
-    gf_up = np.linalg.inv(m_up)
-    gf_dn = np.linalg.inv(m_dn)
-    return np.ascontiguousarray(gf_up), np.ascontiguousarray(gf_dn)
+    gf_up[:, :] = np.linalg.inv(m_up)
+    gf_dn[:, :] = np.linalg.inv(m_dn)
 
 
-@njit((bmat_t, bmat_t, gmat_t, gmat_t, int64), **jkwargs)
-def recompute_greens(bmats_up, bmats_dn, gf_up, gf_dn, t):
-    m_up, m_dn = compute_m_matrices(bmats_up, bmats_dn, t)
-    gf_up[:, :] = np.ascontiguousarray(np.linalg.inv(m_up))
-    gf_dn[:, :] = np.ascontiguousarray(np.linalg.inv(m_dn))
-
-
-def compute_greens_stable(bmats_up, bmats_dn, t, prod_len=1):
+def compute_greens_qrd(bmats_up, bmats_dn, gf_up, gf_dn, t, prod_len=1):
     r"""Computes the Green's functions for both spins.
 
     Parameters
@@ -299,26 +287,29 @@ def compute_greens_stable(bmats_up, bmats_dn, t, prod_len=1):
         The spin-up time step matrices.
     bmats_dn : (L, N, N) np.ndarray
         The spin-down time step matrices.
+    gf_up : np.ndarray
+        Output array for the spin-up Green's function.
+    gf_dn : np.ndarray
+        Output array for the spin-down Green's function.
     t : int
         The current time-step index :math:'t'.
     prod_len : int
         The number of matrices multiplied explicitly
-
-    Returns
-    -------
-    gf_up : np.ndarray
-        The spin-up Green's function.
-    gf_dn : np.ndarray
-        The spin-down Green's function.
     """
-    gf_up = asvqrd_prod_0beta(bmats_up, t, prod_len)
-    gf_dn = asvqrd_prod_0beta(bmats_dn, t, prod_len)
-    return np.ascontiguousarray(gf_up), np.ascontiguousarray(gf_dn)
+    gf_up[:, :] = asvqrd_prod_0beta(bmats_up, t, prod_len)
+    gf_dn[:, :] = asvqrd_prod_0beta(bmats_dn, t, prod_len)
 
 
-def recompute_greens_stable(bmats_up, bmats_dn, gf_up, gf_dn, t, prod_len):
-    gf_up[:, :] = np.ascontiguousarray(asvqrd_prod_0beta(bmats_up, t, prod_len))
-    gf_dn[:, :] = np.ascontiguousarray(asvqrd_prod_0beta(bmats_dn, t, prod_len))
+def init_greens(bmats_up, bmats_dn, t, prod_len=0):
+    num_sites = bmats_up[0].shape[0]
+    shape = (num_sites, num_sites)
+    gf_up = np.ascontiguousarray(np.zeros(shape, dtype=np.float64))
+    gf_dn = np.ascontiguousarray(np.zeros(shape, dtype=np.float64))
+    if prod_len > 0:
+        compute_greens_qrd(bmats_up, bmats_dn, gf_up, gf_dn, t, prod_len)
+    else:
+        compute_greens(bmats_up, bmats_dn, gf_up, gf_dn, t)
+    return gf_up, gf_dn
 
 
 @njit(void(expk_t, float64, conf_t, bmat_t, bmat_t, int64, int64), **jkwargs)
@@ -344,73 +335,6 @@ def update(exp_k, nu, config, bmats_up, bmats_dn, i, t):
     """
     config[i, t] = -config[i, t]
     update_timestep_mats(exp_k, nu, config, bmats_up, bmats_dn, t)
-
-
-# =========================================================================
-# Determinant implementation
-# =========================================================================
-
-
-@njit(
-    nt.Tuple((float64, int64))(
-        expk_t, float64, conf_t, bmat_t, bmat_t, float64, int64[:]
-    ),
-    **jkwargs
-)
-def iteration_det(exp_k, nu, config, bmats_up, bmats_dn, old_det, times):
-    r"""Runs one iteration of the determinant DQMC-scheme.
-
-    Parameters
-    ----------
-    exp_k : np.ndarray
-        The matrix exponential of the kinetic hamiltonian.
-    nu : float
-        The parameter ν defined by :math:'\cosh(ν) = e^{U Δτ / 2}'
-    config : (N, L) np.ndarray
-        The configuration or Hubbard-Stratonovich field.
-    bmats_up : (L, N, N) np.ndarray
-        The spin-up time step matrices.
-    bmats_dn : (L, N, N) np.ndarray
-        The spin-down time step matrices.
-    old_det : float
-        The old determinant product from the last iteration.
-    times : (L,) np.ndarray
-        An array of time indices.
-
-    Returns
-    -------
-    old_det : float
-        The last computed determinant product.
-    accepted : int
-        The number of accepted spin flips.
-    """
-    accepted = 0
-    sites = np.arange(config.shape[0])
-    # Iterate over all time-steps
-    for t in times:
-        # Iterate over all lattice sites
-        np.random.shuffle(sites)
-        for i in sites:
-            # Propose update by flipping spin in configuration
-            update(exp_k, nu, config, bmats_up, bmats_dn, i, t)
-            # Compute determinant product of the new configuration
-            m_up, m_dn = compute_m_matrices(bmats_up, bmats_dn, t)
-            det_up = la.det(m_up)
-            det_dn = la.det(m_dn)
-            new_det = det_up * det_dn
-            # Compute acceptance ratio
-            d = min(abs(new_det / old_det), 1.0)
-            # Check if move is accepted
-            accept = random.random() < d
-            if accept:
-                # Move accepted: Continue using the new configuration
-                accepted += 1
-                old_det = new_det
-            else:
-                # Move not accepted: Revert to the old configuration by updating again
-                update(exp_k, nu, config, bmats_up, bmats_dn, i, t)
-
-    return old_det, accepted
 
 
 # =========================================================================
@@ -628,7 +552,7 @@ def wrap_down_greens(bmats_up, bmats_dn, gf_up, gf_dn, t):
 
 
 @njit(int64(expk_t, float64, conf_t, bmat_t, bmat_t, gmat_t, gmat_t, int64), **jkwargs)
-def iteration_fast(exp_k, nu, config, bmats_up, bmats_dn, gf_up, gf_dn, nwraps=8):
+def dqmc_iteration(exp_k, nu, config, bmats_up, bmats_dn, gf_up, gf_dn, nwraps=8):
     r"""Runs one iteration of the rank-1 DQMC-scheme.
 
     Parameters
@@ -669,6 +593,10 @@ def iteration_fast(exp_k, nu, config, bmats_up, bmats_dn, gf_up, gf_dn, nwraps=8
             d_up = 1 + (1 - gf_up[i, i]) * alpha_up
             d_dn = 1 + (1 - gf_dn[i, i]) * alpha_dn
 
+            # sign_up = d_up / abs(d_up)
+            # sign_dn = d_dn / abs(d_dn)
+            # print(sign_up, sign_dn)
+
             # Check if move is accepted
             if np.random.random() < abs(d_up * d_dn):
                 # Move accepted
@@ -686,17 +614,17 @@ def iteration_fast(exp_k, nu, config, bmats_up, bmats_dn, gf_up, gf_dn, nwraps=8
         # Recompute Green's function for next slice `t+1` after several time slices,
         # otherwise wrap Green's functions up to next time slice.
         if (t + 1) % nwraps == 0:
-            recompute_greens(bmats_up, bmats_dn, gf_up, gf_dn, t + 1)
+            compute_greens(bmats_up, bmats_dn, gf_up, gf_dn, t + 1)
         else:
             wrap_up_greens(bmats_up, bmats_dn, gf_up, gf_dn, t)
     return accepted
 
 
 @njit(
-    (gmat_t, gmat_t, int64, float64[:], float64[:], float64[:], float64[:]),
+    (int64, gmat_t, gmat_t, float64[:], float64[:], float64[:], float64[:]),
     **jkwargs
 )
-def accumulate_measurements(gf_up, gf_dn, sweeps, n_up, n_dn, n2, mz):
+def accumulate_measurements(sweeps, gf_up, gf_dn, n_up, n_dn, n2, mz):
     _n_up = 1 - np.diag(gf_up)
     _n_dn = 1 - np.diag(gf_dn)
     _n_double = _n_up * _n_dn

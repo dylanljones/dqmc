@@ -20,11 +20,10 @@ from .dqmc import (     # noqa: F401
     init_qmc,
     compute_timestep_mats,
     compute_greens,
-    compute_greens_stable,
-    iteration_fast,
+    compute_greens_qrd,
+    init_greens,
+    dqmc_iteration,
     accumulate_measurements,
-    recompute_greens_stable,
-    recompute_greens
 )
 
 logger = logging.getLogger("dqmc")
@@ -117,7 +116,7 @@ class DQMC:
     """Main DQMC simulator instance."""
 
     def __init__(self, model, num_timesteps, num_recomp=1, prod_len=1, seed=None):
-        if num_timesteps % prod_len != 0:
+        if prod_len > 0 and num_timesteps % prod_len != 0:
             raise ValueError("Number of time steps not a multiple of `prod_len`!")
         if num_timesteps % num_recomp != 0:
             raise ValueError("Number of time steps not a multiple of `num_recomp`!")
@@ -144,7 +143,9 @@ class DQMC:
         self.acceptance_probs = list()
 
         # Initialization
-        self._gf_up, self._gf_dn = self.greens()
+        self._gf_up, self._gf_dn = init_greens(self.bmats_up, self.bmats_dn, 0,
+                                               self.prod_len)
+        self.compute_greens()
 
         # Measurement data
         # ----------------
@@ -154,20 +155,30 @@ class DQMC:
         self.n_double = np.zeros(num_sites, dtype=np.float64)
         self.local_moment = np.zeros(num_sites, dtype=np.float64)
 
-    def greens(self):
-        # return compute_greens(self.bmats_up, self.bmats_dn, 0)
-        return compute_greens_stable(self.bmats_up, self.bmats_dn, 0, self.prod_len)
-
-    def recompute_greens(self):   # noqa: F811
-        # recompute_greens(self.bmats_up, self.bmats_dn, self._gf_up, self._gf_dn, t=0)
-        recompute_greens_stable(self.bmats_up, self.bmats_dn, self._gf_up, self._gf_dn,
-                                t=0, prod_len=self.prod_len)
+    def compute_greens(self, t=0):   # noqa: F811
+        if self.prod_len == 0:
+            compute_greens(
+                self.bmats_up,
+                self.bmats_dn,
+                self._gf_up,
+                self._gf_dn,
+                t
+            )
+        else:
+            compute_greens_qrd(
+                self.bmats_up,
+                self.bmats_dn,
+                self._gf_up,
+                self._gf_dn,
+                t,
+                self.prod_len
+            )
 
     def get_greens(self):
         return self._gf_up, self._gf_dn
 
     def iteration(self):
-        accepted = iteration_fast(
+        accepted = dqmc_iteration(
             self.exp_k,
             self.nu,
             self.config,
@@ -184,14 +195,16 @@ class DQMC:
 
     def accumulate_measurements(self, num_measurements):
         # Recompute Green's functions
-        self.recompute_greens()
-        accumulate_measurements(self._gf_up,
-                                self._gf_dn,
-                                num_measurements,
-                                self.n_up,
-                                self.n_dn,
-                                self.n_double,
-                                self.local_moment)
+        self.compute_greens()
+        accumulate_measurements(
+            num_measurements,
+            self._gf_up,
+            self._gf_dn,
+            self.n_up,
+            self.n_dn,
+            self.n_double,
+            self.local_moment
+        )
 
     def warmup(self, sweeps):
         self.it = 0
@@ -205,7 +218,7 @@ class DQMC:
         self.status = "meas"
         for sweep in range(sweeps):
             self.iteration()
-            self.recompute_greens()
+            self.compute_greens()
             # perform measurements
             self.accumulate_measurements(sweeps)
             # user measurement callback
