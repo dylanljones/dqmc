@@ -2,11 +2,11 @@ shape       5, 5
 U           6
 eps         0
 t           1
-mu          3
+mu          0
 temp        0.5
 L           40
 nequil      512
 nsampl      512
-nrecomp     8
+nwraps      8
 prodLen     8
-freshSampl  0
+recomp      1

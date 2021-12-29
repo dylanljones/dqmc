@@ -4,7 +4,7 @@
 ![GitHub license](https://img.shields.io/github/license/dylanljones/dqmc)
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 
-Determinant Quantum Monte Carlo simulations of the Hubbard model in Python.
+Fast and stable Determinant Quantum Monte Carlo simulations of the Hubbard model in Python.
 
 | :warning: **WARNING**: This project is still under development and might contain errors or change significantly in the future! |
 | --- |
@@ -74,13 +74,13 @@ for more information.
    The number of warmup-sweeps
 - `nsampl`
    The number of measurement-sweeps
-- `nrecomp` (optional)
+- `nwraps` (optional)
    The number of time slice wraps after which the Green's functions are recomputed.
    The default is 1.
 - `prodLen` (optional)
    The number of explicit matrix products used for the stabilized matrix product
    via ASvQRD. If 0 no stabilization is performed. The default is 1.
-- `freshSampl`  (optional)
+- `recomp`  (optional)
    Integer flag if the Green's functions are recomputed before performing
    measurements (1) or not (0). The default is 1.
 

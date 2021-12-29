@@ -41,7 +41,7 @@ class Parameters:
     num_timesteps: int
     num_equil: int = 512
     num_sampl: int = 2048
-    num_recomp: int = 1
+    num_wraps: int = 1
     sampl_recomp: int = 1
     prod_len: int = 1
     seed: int = 0
@@ -98,9 +98,9 @@ def parse(file):
             warm = int(val)
         elif head == "nsampl":
             meas = int(val)
-        elif head == "nrecomp":
+        elif head == "nwraps":
             num_recomp = int(val)
-        elif head == "freshsampl":
+        elif head == "recomp":
             sampl_recomp = int(val)
         elif head == "prodlen":
             prod_len = int(val)
@@ -270,7 +270,7 @@ class DQMC:
 
 def run_dqmc(p, callback=None):
     model = hubbard_hypercube(p.shape, p.u, p.eps, p.t, p.mu, p.beta, periodic=True)
-    dqmc = DQMC(model, p.num_timesteps, p.num_recomp, p.prod_len, p.seed,
+    dqmc = DQMC(model, p.num_timesteps, p.num_wraps, p.prod_len, p.seed,
                 p.sampl_recomp)
     try:
         extra_results = dqmc.simulate(p.num_equil, p.num_sampl, callback=callback)

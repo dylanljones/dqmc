@@ -81,10 +81,11 @@ def log_parameters(p):
     logger.info("      temp: %s", 1 / p.beta)
     logger.info(" time-step: %s", p.dt)
     logger.info("         L: %s", p.num_timesteps)
-    logger.info("   nrecomp: %s", p.num_recomp)
+    logger.info("    nwraps: %s", p.num_wraps)
     logger.info("   prodLen: %s", p.prod_len)
     logger.info("    nequil: %s", p.num_equil)
     logger.info("    nsampl: %s", p.num_sampl)
+    logger.info("    recomp: %s", p.sampl_recomp)
     logger.info("      seed: %s", p.seed)
     logger.info("")
 
