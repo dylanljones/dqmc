@@ -205,7 +205,8 @@ class DQMC:
         # Compute and save acceptance ratio
         acc_ratio = accepted / self.config.size
         self.acceptance_probs.append(acc_ratio)
-        logger.debug("[%s] %3d Ratio: %.2f", self.status, self.it, acc_ratio)
+        logger.debug("[%s] %3d Ratio: %.2f  Signs: (%+d %+d)",
+                     self.status, self.it, acc_ratio, self._sgns[0], self._sgns[1])
 
     def accumulate_measurements(self, num_measurements):
         if self.sampl_recomp:
