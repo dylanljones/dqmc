@@ -32,10 +32,10 @@ python -m numpy.f2py -llapack -lblas -c qrp.f90 -m qrp
 
 ## Quickstart
 
-To run a simulation, run the `main.py` script with a configuration text file
+To run a simulation, run the `python -m dqmc` command with a configuration text file
 as parameter, for example:
 ````commandline
-python main.py examples/chain.txt
+python -m dqmc examples/chain.txt
 ````
 Multiple simulations can be run by supplying keyword arguments. The command
 ````commandline
