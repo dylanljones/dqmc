@@ -5,6 +5,8 @@ __pycache__/
 .idea/
 .hypothesis/
 .pytest_cache/
+*.so
+*.exe
 
 # Distribution / packaging
 .Python

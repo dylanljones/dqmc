@@ -4,7 +4,7 @@
 ![GitHub license](https://img.shields.io/github/license/dylanljones/dqmc)
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 
-Determinant Quantum Monte Carlo simulations of the Hubbard model in Python.
+Fast and stable Determinant Quantum Monte Carlo simulations of the Hubbard model in Python.
 
 | :warning: **WARNING**: This project is still under development and might contain errors or change significantly in the future! |
 | --- |
@@ -24,6 +24,11 @@ or the `setup.py` script
 python setup.py install
 ````
 
+To compile the Fortran source code, `cd` into `/dqmc/src` and run
+````commandline
+python -m numpy.f2py -llapack -lblas -c qrp.f90 -m qrp
+````
+
 
 ## Quickstart
 
@@ -32,8 +37,20 @@ as parameter, for example:
 ````commandline
 python main.py examples/chain.txt
 ````
+Multiple simulations can be run by supplying keyword arguments. The command
+````commandline
+python main.py examples/chain.txt -mp 4 -hf -u 1 ... 4 -p moment
+````
+will run the DQMC simulation with the parameters of the file for the interaction
+strengths `1, 2, 3, 4` at half filling (`-hf`) and plot the local moment.
+In order to use multiprocessing the number of processes can be specified by the
+`-mp` argument. Use
+````commandline
+python main.py --help
+````
+for more information.
 
-### Parameters
+### Parameters of input files
 
 - `shape`
    The shape of the lattice model.
@@ -57,12 +74,15 @@ python main.py examples/chain.txt
    The number of warmup-sweeps
 - `nsampl`
    The number of measurement-sweeps
-- `nrecomp` (optional)
+- `nwraps` (optional)
    The number of time slice wraps after which the Green's functions are recomputed.
-   The default is `1`.
+   The default is 1.
 - `prodLen` (optional)
    The number of explicit matrix products used for the stabilized matrix product
-   via ASvQRD. The default is `1`.
+   via ASvQRD. If 0 no stabilization is performed. The default is 1.
+- `recomp`  (optional)
+   Integer flag if the Green's functions are recomputed before performing
+   measurements (1) or not (0). The default is 1.
 
 ## Usage
 
@@ -130,51 +150,45 @@ def callback(gf_up, gf_dn):
     return result
 ```
 The returned result must be a `np.ndarray` for ensuring correct averaging after the
-measurement sweeps. If no callback is given the local Green's function `G_{ij}` is
-measured by default. A collection of methods for measuring observables is contained
+measurement sweeps. A collection of methods for measuring observables is contained
 in the `mfuncs` module.
 
 The above steps can be simplified by calling the `run_dqmc`-method:
 ```python
-from dqmc import run_dqmc, mfuncs
+from dqmc import run_dqmc, mfuncs, Parameters
 
 shape = 10
 u, eps, mu, hop = 4.0, 0.0, 0.0, 1.0
-beta = 1.0
+dt = 0.05
 num_timesteps = 100
 warmup, measure = 300, 3000
 
-res = run_dqmc(shape, u, eps, hop, mu, beta, num_timesteps,
-               warmup, measure, mfuncs.occupation)
+p = Parameters(shape, u, eps, hop, mu, dt, num_timesteps, warmup, measure)
+n_up, n_dn, n_double, moment, occ = run_dqmc(p, callback=mfuncs.occupation)
 ```
+The default observables are returned first, folled by the result of the callback (`0`
+if no callback is passed).
 
 ### Multiprocessing
 
-To run multiple DQMC simulations in parallel use the `ProcessPool`-object:
+To run multiple DQMC simulations in parallel use the `run_dqmc_parallel`-method,
+which internally calls the `run_dqmc`-method. To construct a list of `Parameters`-objects
+can be created via the `map_params`-method:
+
 ```python
-from dqmc import ProcessPool, run_dqmc, mfuncs
+from dqmc import Parameters, map_params, run_dqmc_parallel
 
 shape = 10
-inters = [2, 3, 4, 5, 6, 7, 8, 9]
 eps, mu, hop = 0.0, 0.0, 1.0
-beta = 1.0
+dt = 0.05
 num_timesteps = 100
 warmup, measure = 300, 3000
+p = Parameters(shape, 0, eps, hop, mu, dt, num_timesteps, warmup, measure)
 
-params = (
-  shape, inters, eps, hop, mu, beta, num_timesteps,
-  warmup, measure, mfuncs.occupation
-)
-with ProcessPool(max_workers=4) as executor:
-  results = executor.distribute(run_dqmc, params)
-```
-or the inlcuded `run_parallel`-method, which internally calls the `run_dqmc`-method:
-```python
-from dqmc import run_dqmc_parallel
-
+params = map_params(p, u=[1, 2, 3, 4, 5])
 results = run_dqmc_parallel(params, max_workers=4)
 ```
-Scalar arguments are expanded to a list and shared by the processes.
+
 
 ## Contributing
 

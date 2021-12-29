@@ -2,10 +2,11 @@ shape       5, 5
 U           6
 eps         0
 t           1
-mu          3
-temp        0.2
-L           64
+mu          0
+temp        0.5
+L           40
 nequil      512
-nsampl      2048
-nrecomp     8
-prodLen     16
+nsampl      512
+nwraps      8
+prodLen     8
+recomp      1

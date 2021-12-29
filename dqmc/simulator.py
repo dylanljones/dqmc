@@ -13,36 +13,128 @@
 import time
 import logging
 import numpy as np
+from typing import Union
+from dataclasses import dataclass
 from .model import hubbard_hypercube
-from .mp import run_parallel, prun_parallel
 from .dqmc import (     # noqa: F401
     init_qmc,
     compute_timestep_mats,
     compute_greens,
-    compute_greens_stable,
-    iteration_fast,
+    compute_greens_qrd,
+    init_greens,
+    dqmc_iteration,
     accumulate_measurements,
-    recompute_greens_stable,
-    recompute_greens
 )
 
 logger = logging.getLogger("dqmc")
 
 
+@dataclass
+class Parameters:
+
+    shape: Union[int, tuple]
+    u: float
+    eps: float
+    t: float
+    mu: float
+    dt: float
+    num_timesteps: int
+    num_equil: int = 512
+    num_sampl: int = 2048
+    num_wraps: int = 1
+    sampl_recomp: int = 1
+    prod_len: int = 1
+    seed: int = 0
+
+    @property
+    def beta(self):
+        return self.num_timesteps * self.dt
+
+
+def parse(file):
+    shape = 0
+    u = 0.
+    eps = 0.
+    t = 0.
+    mu = 0.
+    dt = 0.
+    beta = 0.
+    temp = 0.
+    num_timesteps = 0
+    warm = 0
+    meas = 0
+    num_recomp = 0
+    sampl_recomp = 1
+    prod_len = 1
+
+    logger.info("Reading file %s...", file)
+    with open(file, "r") as fh:
+        text = fh.read()
+    lines = text.splitlines(keepends=False)
+    for line in lines:
+        if "#" in line:
+            text, comm = line.strip().split("#")
+            line = text.strip()
+        if not line:
+            continue
+
+        head, val = line.split(maxsplit=1)
+        head = head.lower()
+        if head == "shape":
+            shape = tuple(int(x) for x in val.split(", "))
+        elif head == "u":
+            u = float(val)
+        elif head == "eps":
+            eps = float(val)
+        elif head == "t":
+            t = float(val)
+        elif head == "mu":
+            mu = float(val)
+        elif head == "dt":
+            dt = float(val)
+        elif head == "l":
+            num_timesteps = int(val)
+        elif head == "nequil":
+            warm = int(val)
+        elif head == "nsampl":
+            meas = int(val)
+        elif head == "nwraps":
+            num_recomp = int(val)
+        elif head == "recomp":
+            sampl_recomp = int(val)
+        elif head == "prodlen":
+            prod_len = int(val)
+        elif head == "beta":
+            beta = float(val)
+        elif head == "temp":
+            temp = float(val)
+        else:
+            logger.warning("Parameter %s of file '%s' not recognized!", head, file)
+    if dt == 0:
+        if temp:
+            beta = 1 / temp
+        dt = beta / num_timesteps
+
+    return Parameters(shape, u, eps, t, mu, dt, num_timesteps, warm, meas,
+                      num_recomp, sampl_recomp, prod_len)
+
+
 class DQMC:
     """Main DQMC simulator instance."""
 
-    def __init__(self, model, num_timesteps, num_recomp=1, prod_len=1, seed=None):
-        if num_timesteps % prod_len != 0:
-            raise ValueError("Number of time steps not a multiple of `prod_len`!")
-        if num_timesteps % num_recomp != 0:
+    def __init__(self, model, num_timesteps, num_recomp=1, prod_len=1, seed=None,
+                 sampl_recomp=True):
+        if num_recomp > 0 and num_timesteps % num_recomp != 0:
             raise ValueError("Number of time steps not a multiple of `num_recomp`!")
+        if prod_len > 0 and num_timesteps % prod_len != 0:
+            raise ValueError("Number of time steps not a multiple of `prod_len`!")
 
         if seed is None:
             seed = 0
         # random.seed(seed)
 
         self.num_recomp = num_recomp
+        self.sampl_recomp = sampl_recomp
         self.prod_len = prod_len
 
         self.model = model
@@ -60,7 +152,10 @@ class DQMC:
         self.acceptance_probs = list()
 
         # Initialization
-        self._gf_up, self._gf_dn = self.greens()
+        gf_up, gf_dn, sgns = init_greens(self.bmats_up, self.bmats_dn, 0, self.prod_len)
+        self._gf_up = gf_up
+        self._gf_dn = gf_dn
+        self._sgns = sgns
 
         # Measurement data
         # ----------------
@@ -70,20 +165,32 @@ class DQMC:
         self.n_double = np.zeros(num_sites, dtype=np.float64)
         self.local_moment = np.zeros(num_sites, dtype=np.float64)
 
-    def greens(self):
-        # return compute_greens(self.bmats_up, self.bmats_dn, 0)
-        return compute_greens_stable(self.bmats_up, self.bmats_dn, 0, self.prod_len)
-
-    def recompute_greens(self):   # noqa: F811
-        # recompute_greens(self.bmats_up, self.bmats_dn, self._gf_up, self._gf_dn, t=0)
-        recompute_greens_stable(self.bmats_up, self.bmats_dn, self._gf_up, self._gf_dn,
-                                t=0, prod_len=self.prod_len)
+    def compute_greens(self, t=0):   # noqa: F811
+        if self.prod_len == 0:
+            compute_greens(
+                self.bmats_up,
+                self.bmats_dn,
+                self._gf_up,
+                self._gf_dn,
+                self._sgns,
+                t
+            )
+        else:
+            compute_greens_qrd(
+                self.bmats_up,
+                self.bmats_dn,
+                self._gf_up,
+                self._gf_dn,
+                self._sgns,
+                t,
+                self.prod_len
+            )
 
     def get_greens(self):
         return self._gf_up, self._gf_dn
 
     def iteration(self):
-        accepted = iteration_fast(
+        accepted = dqmc_iteration(
             self.exp_k,
             self.nu,
             self.config,
@@ -91,7 +198,9 @@ class DQMC:
             self.bmats_dn,
             self._gf_up,
             self._gf_dn,
-            self.num_recomp
+            self._sgns,
+            self.num_recomp,
+            self.prod_len
         )
         # Compute and save acceptance ratio
         acc_ratio = accepted / self.config.size
@@ -99,15 +208,21 @@ class DQMC:
         logger.debug("[%s] %3d Ratio: %.2f", self.status, self.it, acc_ratio)
 
     def accumulate_measurements(self, num_measurements):
-        # Recompute Green's functions
-        self.recompute_greens()
-        accumulate_measurements(self._gf_up,
-                                self._gf_dn,
-                                num_measurements,
-                                self.n_up,
-                                self.n_dn,
-                                self.n_double,
-                                self.local_moment)
+        if self.sampl_recomp:
+            # Recompute Green's functions before measurements
+            self.compute_greens()
+
+        # Accumulate measurements of default observables
+        accumulate_measurements(
+            num_measurements,
+            self._gf_up,
+            self._gf_dn,
+            self._sgns,
+            self.n_up,
+            self.n_dn,
+            self.n_double,
+            self.local_moment
+        )
 
     def warmup(self, sweeps):
         self.it = 0
@@ -121,14 +236,12 @@ class DQMC:
         self.status = "meas"
         for sweep in range(sweeps):
             self.iteration()
-            self.recompute_greens()
             # perform measurements
             self.accumulate_measurements(sweeps)
             # user measurement callback
             if callback is not None:
                 gf_up, gf_dn = self.get_greens()
                 out += callback(gf_up, gf_dn, *args, **kwargs)
-
             self.it += 1
         return out
 
@@ -148,24 +261,19 @@ class DQMC:
 
         t = time.perf_counter() - t0
         logger.info("%s iterations completed!", total_sweeps)
+        logger.info("Signs: %s", self._sgns)
         logger.info("Equil CPU time: %6.1fs  (%.4f s/it)", t_equil, t_equil / num_equil)
         logger.info("Sampl CPU time: %6.1fs  (%.4f s/it)", t_sampl, t_sampl / num_sampl)
         logger.info("Total CPU time: %6.1fs  (%.4f s/it)", t, t / total_sweeps)
         return results
 
 
-def run_dqmc(shape, u, eps, hop, mu, beta, num_timesteps, warmup, measure, callback):
-    model = hubbard_hypercube(shape, u, eps, hop, mu, beta, periodic=True)
-    dqmc = DQMC(model, num_timesteps)
+def run_dqmc(p, callback=None):
+    model = hubbard_hypercube(p.shape, p.u, p.eps, p.t, p.mu, p.beta, periodic=True)
+    dqmc = DQMC(model, p.num_timesteps, p.num_wraps, p.prod_len, p.seed,
+                p.sampl_recomp)
     try:
-        return dqmc.simulate(warmup, measure, callback=callback)
+        extra_results = dqmc.simulate(p.num_equil, p.num_sampl, callback=callback)
     except np.linalg.LinAlgError:
-        return np.nan
-
-
-def run_dqmc_parallel(params, max_workers=None):
-    return run_parallel(run_dqmc, params, max_workers)
-
-
-def prun_dqmc_parallel(params, max_workers=None):
-    return prun_parallel(run_dqmc, params, max_workers)
+        return ()
+    return dqmc.n_up, dqmc.n_dn, dqmc.n_double, dqmc.local_moment, extra_results

@@ -312,16 +312,6 @@ def mdot(mats):
     return prod
 
 
-def qrp2(arr):
-    # Compute QR decomposition
-    q, r, jpvt = la.qr(arr, mode="full", pivoting=True)
-    # Build permutation matrix as result of the column pivoting
-    n = len(jpvt)
-    p = np.zeros((n, n), dtype=np.int64)
-    p[jpvt, np.arange(n)] = 1
-    return q, r, p
-
-
 def qrp(a):
     # Call DGEQP3 to compute QR and tau matrices and the collumn pivot indices
     qr, jpvt, tau, work, info = la.lapack.dgeqp3(a)
@@ -401,68 +391,6 @@ def matrix_product_sequence_0beta(mats, prod_len, shift):
     return prod_seq[::-1]
 
 
-def asvqrd_prod_0beta(matrices, t=0, prod_len=1):
-    """Computes the stabilized inverse of a matrix product plus the identity.
-
-    Parameters
-    ----------
-    matrices : (L, N, M) np.ndarray
-        The input matrices to compute the matrix product and inverse. Expected
-        to be in normal order :math:'B_0, B_1, ..., B_{L-1}'.
-    t : int
-        The current time slice index `l`.
-    prod_len : int
-        The number of matrices in each product. Has to be a multiple of
-        the total number of matrices `L`.
-
-    Returns
-    -------
-    res : (N, M) np.ndarray
-        The result of the matrix product and inversion.
-
-    Notes
-    -----
-    Uses the stratification methods with pre-pivoting to compute
-    ..math::
-        G = (I + B_{L-l-1} B_{L-l-2} ... B_{l+1}, B_{l})^{-1}
-    """
-    # Pre-compute explicit matrix products
-    mats = matrix_product_sequence_0beta(matrices, prod_len, t)
-
-    # Compute QR decomposition with pivoting
-    q, r, p = qrp(mats[0])
-    # Compute diagonal matrix D = diag(R)
-    d = np.diag(np.diag(r))
-    # Compute T = D^{-1} R P
-    t = np.dot(np.linalg.inv(d), np.dot(r, p.T))
-    t_prod = t
-    for j in range(1, len(mats)):
-        tmp = np.dot(np.dot(mats[j], q), d)
-        q, r, p = qrp(tmp)
-        # Compute diagonal matrix D = diag(R)
-        d = np.diag(np.diag(r))
-        # Compute T = D^{-1} R P
-        t = np.dot(np.linalg.inv(d), np.dot(r, p.T))
-        # Compute product of T = T_L ... T_2 T_1
-        t_prod = np.dot(t, t_prod)
-
-    # Compute matrices D_b and D_s, such that D_L = D_b D_s
-    diag = np.diag(d)
-    db = np.eye(len(d))
-    ds = np.eye(len(d))
-    for i in range(len(d)):
-        absdiag = abs(diag[i])
-        if absdiag > 1:
-            db[i, i] = diag[i]
-        else:
-            ds[i, i] = diag[i]
-
-    db_inv = la.inv(db)
-    qt = q.T
-    # calculate (D_b^{-1} Q^T + D_s T)^{-1} (D_b^{-1} Q^T)
-    return np.dot(la.inv(np.dot(db_inv, qt) + np.dot(ds, t_prod)), np.dot(db_inv, qt))
-
-
 @njit(
     float64[:, :, :](float64[:, :, ::1], int64, int64),
     fastmath=True, nogil=True, cache=True
@@ -515,6 +443,72 @@ def matrix_product_sequence_beta0(mats, prod_len, shift):
     return prod_seq[::-1]
 
 
+@njit(float64[:, :](float64[:, :], float64[:, :], float64[:, :]))
+def _asvqrd_prod_construct(q, d, t_prod):
+    # Compute matrices D_b and D_s, such that D_L = D_b D_s
+    diagb = np.diag(d)
+    diags = np.copy(diagb)
+    maskb = np.abs(diagb) > 1
+    diagb[~maskb] = 1.0
+    diags[maskb] = 1.0
+    db = np.diag(diagb)
+    ds = np.diag(diags)
+
+    # calculate (D_b^{-1} Q^T + D_s T)^{-1} (D_b^{-1} Q^T)
+    db_inv_qt = np.dot(np.linalg.inv(db), q.T)
+    return np.dot(np.linalg.inv(db_inv_qt + np.dot(ds, t_prod)), db_inv_qt)
+
+
+def asvqrd_prod_0beta(matrices, t=0, prod_len=1):
+    """Computes the stabilized inverse of a matrix product plus the identity.
+
+    Parameters
+    ----------
+    matrices : (L, N, M) np.ndarray
+        The input matrices to compute the matrix product and inverse. Expected
+        to be in normal order :math:'B_0, B_1, ..., B_{L-1}'.
+    t : int
+        The current time slice index `l`.
+    prod_len : int
+        The number of matrices in each product. Has to be a multiple of
+        the total number of matrices `L`.
+
+    Returns
+    -------
+    res : (N, M) np.ndarray
+        The result of the matrix product and inversion.
+
+    Notes
+    -----
+    Uses the stratification methods with pre-pivoting to compute
+    ..math::
+        G = (I + B_{L-l-1} B_{L-l-2} ... B_{l+1}, B_{l})^{-1}
+    """
+    # Pre-compute explicit matrix products
+    mats = matrix_product_sequence_0beta(matrices, prod_len, t)
+
+    # Compute QR decomposition with pivoting
+    q, r, p = qrp(mats[0])
+    # Compute diagonal matrix D = diag(R)
+    d = np.diag(np.diag(r))
+    # Compute T = D^{-1} R P
+    t = np.dot(np.linalg.inv(d), np.dot(r, p.T))
+    t_prod = t
+    for j in range(1, len(mats)):
+        tmp = np.dot(np.dot(mats[j], q), d)
+        q, r, p = qrp(tmp)
+        # Compute diagonal matrix D = diag(R)
+        d = np.diag(np.diag(r))
+        # Compute T = D^{-1} R P
+        t = np.dot(np.linalg.inv(d), np.dot(r, p.T))
+        # Compute product of T = T_L ... T_2 T_1
+        t_prod = np.dot(t, t_prod)
+
+    # Compute matrices D_b and D_s, such that D_L = D_b D_s
+    # and calculate (D_b^{-1} Q^T + D_s T)^{-1} (D_b^{-1} Q^T)
+    return _asvqrd_prod_construct(q, d, t_prod)
+
+
 def asvqrd_prod_beta0(matrices, prod_len, t):
     """Computes the stabilized inverse of a matrix product plus the identity.
 
@@ -561,17 +555,121 @@ def asvqrd_prod_beta0(matrices, prod_len, t):
         t_prod = np.dot(t, t_prod)
 
     # Compute matrices D_b and D_s, such that D_L = D_b D_s
-    diag = np.diag(d)
-    db = np.eye(len(d))
-    ds = np.eye(len(d))
-    for i in range(len(d)):
-        absdiag = abs(diag[i])
-        if absdiag > 1:
-            db[i, i] = diag[i]
-        else:
-            ds[i, i] = diag[i]
+    # and calculate (D_b^{-1} Q^T + D_s T)^{-1} (D_b^{-1} Q^T)
+    return _asvqrd_prod_construct(q, d, t_prod)
 
-    db_inv = la.inv(db)
-    qt = q.T
-    # calculate (D_b^{-1} Q^T + D_s T)^{-1} (D_b^{-1} Q^T)
-    return np.dot(la.inv(np.dot(db_inv, qt) + np.dot(ds, t_prod)), np.dot(db_inv, qt))
+
+def timeflow_map_0beta(matrices, prod_len, t):
+    """Computes the UDT decomposition for simulations in ascending time flow order.
+
+    Parameters
+    ----------
+    matrices : (L, N, M) np.ndarray
+        The input matrices to compute the matrix product and inverse. Expected
+        to be in normal order :math:'B_0, B_1, ..., B_{L-1}'.
+    t : int
+        The current time slice index `l`.
+    prod_len : int
+        The number of matrices in each product. Has to be a multiple of
+        the total number of matrices `L`.
+
+    Returns
+    -------
+    q : (N, N) np.ndarray
+        The unitary/orthogonal matrix Q of the QR decomposition.
+    d : (N, ) np.ndarray
+        The diagonal elements of the matrix R of the QR decomposition.
+    t : (N, N) np.ndarray
+        The product of T matrices.
+    tau : (N, ) np.ndarray
+        The scalar factors of the elementary reflectors of the QR decomposition.
+    lwork : int
+        The used size of the work array.
+    """
+    # Pre-compute matrix product sequence
+    mats = matrix_product_sequence_0beta(matrices, prod_len, t)
+
+    # Compute first QR decomposition with column pivoting
+    q, jpvt, tau, work, info = la.lapack.dgeqp3(mats[0])
+    # Extract diagonal elements of R (upper triangular matrix of Q)
+    d = np.array(np.diag(q))
+    d[d == 0.0] = 1.0
+    # Compute T_1 = D^{-1} R P:
+    # Multiply columns of R with 1/d and apply column pivoting
+    t = (np.triu(q).T / d).T[:, np.argsort(jpvt)]
+    for i in range(1, len(mats)):
+        lwork = len(work)  # noqa
+        # Multiply with Q from the right, overwriting the 'W' matrix
+        w, work, info = la.lapack.dormqr("R", "N", q, tau, mats[i], lwork)
+        # Scale by previous diagonal entries
+        w *= d
+        # Pre-pivot 'W' and perform QR-decomposition
+        jpvt = np.argsort(la.norm(w, axis=0))[::-1]
+        q, tau, work, info = la.lapack.dgeqrf(w[:, jpvt])
+        # Extract diagonal elements of R (upper triangular matrix of Q)
+        d = np.array(np.diag(q))
+        d[d == 0.0] = 1.0
+        # Multiply 1/d with the upper triangular R matrix
+        # and multiply current T matrix with the pivoted product of the previous T's
+        t = np.dot((np.triu(q).T / d).T, t[jpvt, :])
+
+    lwork = len(work)  # noqa
+    return q, d, t, tau, lwork
+
+
+def timeflow_map_beta0(matrices, prod_len, t):
+    """Computes the UDT decomposition for simulations in descending time flow order.
+
+    Parameters
+    ----------
+    matrices : (L, N, M) np.ndarray
+        The input matrices to compute the matrix product and inverse. Expected
+        to be in normal order :math:'B_0, B_1, ..., B_{L-1}'.
+    t : int
+        The current time slice index `l`.
+    prod_len : int
+        The number of matrices in each product. Has to be a multiple of
+        the total number of matrices `L`.
+
+    Returns
+    -------
+    q : (N, N) np.ndarray
+        The unitary/orthogonal matrix Q of the QR decomposition.
+    d : (N, ) np.ndarray
+        The diagonal elements of the matrix R of the QR decomposition.
+    t : (N, N) np.ndarray
+        The product of T matrices.
+    tau : (N, ) np.ndarray
+        The scalar factors of the elementary reflectors of the QR decomposition.
+    lwork : int
+        The used size of the work array.
+    """
+    # Pre-compute matrix product sequence
+    mats = matrix_product_sequence_beta0(matrices, prod_len, t)
+
+    # Compute first QR decomposition with column pivoting
+    q, jpvt, tau, work, info = la.lapack.dgeqp3(mats[0])
+    # Extract diagonal elements of R (upper triangular matrix of Q)
+    d = np.array(np.diag(q))
+    d[d == 0.0] = 1.0
+    # Compute T_1 = D^{-1} R P:
+    # Multiply columns of R with 1/d and apply column pivoting
+    t = (np.triu(q).T / d).T[:, np.argsort(jpvt)]
+    for i in range(1, len(mats)):
+        lwork = len(work)  # noqa
+        # Multiply with Q from the right, overwriting the 'W' matrix
+        w, work, info = la.lapack.dormqr("R", "N", q, tau, mats[i], lwork)
+        # Scale by previous diagonal entries
+        w *= d
+        # Pre-pivot 'W' and perform QR-decomposition
+        jpvt = np.argsort(la.norm(w, axis=0))[::-1]
+        q, tau, work, info = la.lapack.dgeqrf(w[:, jpvt])
+        # Extract diagonal elements of R (upper triangular matrix of Q)
+        d = np.array(np.diag(q))
+        d[d == 0.0] = 1.0
+        # Multiply 1/d with the upper triangular R matrix
+        # and multiply current T matrix with the pivoted product of the previous T's
+        t = np.dot((np.triu(q).T / d).T, t[jpvt, :])
+
+    lwork = len(work)  # noqa
+    return q, d, t, tau, lwork
