@@ -46,7 +46,7 @@ strengths `1, 2, 3, 4` at half filling (`-hf`) and plot the local moment.
 In order to use multiprocessing the number of processes can be specified by the
 `-mp` argument. Use
 ````commandline
-python main.py --help
+python -m dqmc --help
 ````
 for more information.
 
@@ -84,7 +84,8 @@ for more information.
    Integer flag if the Green's functions are recomputed before performing
    measurements (1) or not (0). The default is 1.
 
-## Usage
+
+## API Usage
 
 ### Initializing the Hubbard model
 

@@ -42,16 +42,31 @@ def parse_array_args(strings, type=float):
 def parse_args(argv=None):
     parser = argparse.ArgumentParser()
     parser.add_argument("file", type=str)
-    parser.add_argument("--processes", "-mp", type=int, default=1)
-    parser.add_argument("-hf", action="store_true")
-    parser.add_argument("-u", type=str, nargs="+")
-    parser.add_argument("-eps", type=str, nargs="+")
-    parser.add_argument("-t", type=str, nargs="+")
-    parser.add_argument("-mu", type=str, nargs="+")
-    parser.add_argument("-dt", type=str, nargs="+")
-    parser.add_argument("-temp", type=str, nargs="+")
+    parser.add_argument("--processes", "-mp", type=int, default=1,
+                        help="Number of processes used if multiple simulations are run")
+    parser.add_argument("-hf", action="store_true",
+                        help="Set model at half filling")
+    parser.add_argument("-u", type=str, nargs="+",
+                        help="Use array for interaction strength. Pass explicit values "
+                             "or: start [start+step] ... stop")
+    parser.add_argument("-eps", type=str, nargs="+",
+                        help="Use array for on-site energy. Pass explicit values or: "
+                             "start [start+step] ... stop")
+    parser.add_argument("-t", type=str, nargs="+",
+                        help="Use array for hopping energy. Pass explicit values or: "
+                             "start [start+step] ... stop")
+    parser.add_argument("-mu", type=str, nargs="+",
+                        help="Use array for chemical potential. Pass explicit values "
+                             "or: start [start+step] ... stop")
+    parser.add_argument("-dt", type=str, nargs="+",
+                        help="Use array for imaginary time step size. Pass explicit "
+                             "values or: start [start+step] ... stop")
+    parser.add_argument("-temp", type=str, nargs="+",
+                        help="Use array for temperature. Pass explicit values or: "
+                             "start [start+step] ... stop")
     parser.add_argument("--plot", "-p", type=str, default="moment",
-                        choices=["nup", "ndn", "n2", "moment"])
+                        choices=["nup", "ndn", "n2", "moment"],
+                        help="Observable to plot")
     args = parser.parse_args(argv)
     argdict = dict(args.__dict__)
 
@@ -79,32 +94,47 @@ def parse_args(argv=None):
     return p, kwargs, plot, processes
 
 
-args = sys.argv[1:]
-if len(args) == 0:
-    argstr = "test.txt"
-    args = argstr.split(" ")
-p, kwargs, plot, max_workers = parse_args(args)
+def main():
+    plotable = ["nup", "ndn", "n2", "moment"]
+    ylabels = {
+        "nup": "$<n_↑>$",
+        "ndn": "$<n_↓>$",
+        "n2": "$<n_↑ n_↓>$",
+        "moment": "$<m_z^2>$"
+    }
+    xlabel_aliases = {
+        "temp": "T"
+    }
 
-if kwargs:
-    logger.setLevel(logging.WARNING)
+    args = sys.argv[1:]
+    if len(args) == 0:
+        argstr = "test.txt"
+        args = argstr.split(" ")
+    p, kwargs, plot, max_workers = parse_args(args)
 
-    params = map_params(p, **kwargs)
-    results = run_dqmc_parallel(params, max_workers=max_workers)
-    i = ["nup", "ndn", "n2", "moment"].index(plot)
-    xlabel = list(kwargs.keys())[0]
-    x = kwargs[xlabel]
-    y = [np.mean(res[i]) for res in results]
-    ylabel = plot
-    fig, ax = plt.subplots()
-    ax.plot(x, y)
-    ax.set_xlabel(xlabel)
-    ax.set_ylabel(ylabel)
-    ax.plot(x, y)
-    plt.show()
-else:
-    logger.setLevel(logging.DEBUG)
+    if kwargs:
+        logger.setLevel(logging.WARNING)
 
-    log_parameters(p)
-    logger.info("Starting DQMC simulation...")
-    results = run_dqmc(p)
-    log_results(*results)
+        params = map_params(p, **kwargs)
+        results = run_dqmc_parallel(params, max_workers=max_workers)
+        i = plotable.index(plot)
+        xlabel = list(kwargs.keys())[0]
+        x = kwargs[xlabel]
+        y = [np.mean(res[i]) for res in results]
+        ylabel = plot
+        fig, ax = plt.subplots()
+        ax.plot(x, y)
+        ax.set_xlabel(xlabel_aliases.get(xlabel, xlabel))
+        ax.set_ylabel(ylabels.get(ylabel))
+        plt.show()
+    else:
+        logger.setLevel(logging.DEBUG)
+
+        log_parameters(p)
+        logger.info("Starting DQMC simulation...")
+        results = run_dqmc(p)
+        log_results(*results)
+
+
+if __name__ == "__main__":
+    main()
