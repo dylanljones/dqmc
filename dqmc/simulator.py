@@ -124,10 +124,10 @@ class DQMC:
 
     def __init__(self, model, num_timesteps, num_recomp=1, prod_len=1, seed=None,
                  sampl_recomp=True):
+        if num_recomp > 0 and num_timesteps % num_recomp != 0:
+            raise ValueError("Number of time steps not a multiple of `num_recomp`!")
         if prod_len > 0 and num_timesteps % prod_len != 0:
             raise ValueError("Number of time steps not a multiple of `prod_len`!")
-        if num_timesteps % num_recomp != 0:
-            raise ValueError("Number of time steps not a multiple of `num_recomp`!")
 
         if seed is None:
             seed = 0
@@ -152,8 +152,10 @@ class DQMC:
         self.acceptance_probs = list()
 
         # Initialization
-        self._gf_up, self._gf_dn = init_greens(self.bmats_up, self.bmats_dn, 0,
-                                               self.prod_len)
+        gf_up, gf_dn, sgns = init_greens(self.bmats_up, self.bmats_dn, 0, self.prod_len)
+        self._gf_up = gf_up
+        self._gf_dn = gf_dn
+        self._sgns = sgns
 
         # Measurement data
         # ----------------
@@ -170,6 +172,7 @@ class DQMC:
                 self.bmats_dn,
                 self._gf_up,
                 self._gf_dn,
+                self._sgns,
                 t
             )
         else:
@@ -178,6 +181,7 @@ class DQMC:
                 self.bmats_dn,
                 self._gf_up,
                 self._gf_dn,
+                self._sgns,
                 t,
                 self.prod_len
             )
@@ -194,6 +198,7 @@ class DQMC:
             self.bmats_dn,
             self._gf_up,
             self._gf_dn,
+            self._sgns,
             self.num_recomp,
             self.prod_len
         )
@@ -212,6 +217,7 @@ class DQMC:
             num_measurements,
             self._gf_up,
             self._gf_dn,
+            self._sgns,
             self.n_up,
             self.n_dn,
             self.n_double,
@@ -255,6 +261,7 @@ class DQMC:
 
         t = time.perf_counter() - t0
         logger.info("%s iterations completed!", total_sweeps)
+        logger.info("Signs: %s", self._sgns)
         logger.info("Equil CPU time: %6.1fs  (%.4f s/it)", t_equil, t_equil / num_equil)
         logger.info("Sampl CPU time: %6.1fs  (%.4f s/it)", t_sampl, t_sampl / num_sampl)
         logger.info("Total CPU time: %6.1fs  (%.4f s/it)", t, t / total_sweeps)

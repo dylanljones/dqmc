@@ -80,11 +80,12 @@ def test_qrp(a):
         assert_allclose(lhs, rhs, rtol=1e-6, atol=10)
 
 
-@given(mat_arr, st.integers(1, 16), st.integers(0, 20))
+@given(mat_arr, st.integers(1, 16), st.integers(0, 10))
 def test_matrix_product_sequence_0beta(mats, prod_len, shift):
     num_mats = len(mats)
     assume(num_mats % prod_len == 0)
     assume(np.all(np.isfinite(mats)))
+    assume(shift < num_mats)
 
     indices = np.arange(num_mats)[::-1]
     indices = np.roll(indices, shift)
@@ -96,11 +97,12 @@ def test_matrix_product_sequence_0beta(mats, prod_len, shift):
     assert_allclose(result, expected)
 
 
-@given(mat_arr, st.integers(1, 10), st.shared(st.integers(0, 20)))
+@given(mat_arr, st.integers(1, 10), st.shared(st.integers(0, 10)))
 def test_matrix_product_sequence_beta0(mats, prod_len, shift):
     num_mats = len(mats)
     assume(num_mats % prod_len == 0)
     assume(np.all(np.isfinite(mats)))
+    assume(shift < num_mats)
 
     indices = np.arange(num_mats)
     indices = np.roll(indices, -shift)

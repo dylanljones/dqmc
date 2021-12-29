@@ -144,8 +144,8 @@ def test_compute_acceptance_fast(u, beta, i, t):
     model = hubbard_hypercube(num_sites, u, eps, hop, mu, beta, periodic=True)
     exp_k, nu, config = dqmc.init_qmc(model, num_timesteps, 0)
     bmats_up, bmats_dn = dqmc.compute_timestep_mats(exp_k, nu, config)
-
-    gf_up, gf_dn = dqmc.compute_greens(bmats_up, bmats_dn, t)
+    gf_up, gf_dn, sgns = dqmc.init_greens(bmats_up, bmats_dn, t)
+    # gf_up, gf_dn = dqmc.compute_greens(bmats_up, bmats_dn, t)
 
     # Compute fast acceptance *before* spin flip
     d = dqmc.compute_acceptance_fast(nu, config, gf_up, gf_dn, i, t)
@@ -187,10 +187,10 @@ def test_compute_greens_stable_t0(u, beta, prod_len):
     bmats_up, bmats_dn = dqmc.compute_timestep_mats(exp_k, nu, config)
 
     # Compute Green's function of time slice `t`
-    gf_up_ref, gf_dn_ref = dqmc.compute_greens(bmats_up, bmats_dn, t)
+    gf_up_ref, gf_dn_ref, sgns = dqmc.init_greens(bmats_up, bmats_dn, t, prod_len=0)
 
     # Compute stable Green's function of time slice `t`
-    gf_up, gf_dn = dqmc.compute_greens_stable(bmats_up, bmats_dn, t, prod_len)
+    gf_up, gf_dn, sgns = dqmc.init_greens(bmats_up, bmats_dn, t, prod_len)
 
     assert_allclose(gf_up, gf_up_ref, rtol=1e-6, atol=10)
     assert_allclose(gf_dn, gf_dn_ref, rtol=1e-6, atol=10)
@@ -209,10 +209,10 @@ def test_compute_greens_stable(u, beta, prod_len, t):
     bmats_up, bmats_dn = dqmc.compute_timestep_mats(exp_k, nu, config)
 
     # Compute Green's function of time slice `t`
-    gf_up_ref, gf_dn_ref = dqmc.compute_greens(bmats_up, bmats_dn, t)
+    gf_up_ref, gf_dn_ref, sgns = dqmc.init_greens(bmats_up, bmats_dn, t)
 
     # Compute stable Green's function of time slice `t`
-    gf_up, gf_dn = dqmc.compute_greens_stable(bmats_up, bmats_dn, t, prod_len)
+    gf_up, gf_dn, sgns = dqmc.init_greens(bmats_up, bmats_dn, t, prod_len)
 
     assert_allclose(gf_up, gf_up_ref, rtol=1e-6, atol=10)
     assert_allclose(gf_dn, gf_dn_ref, rtol=1e-6, atol=10)
@@ -230,12 +230,12 @@ def test_update_greens(u, beta, i):
     model = hubbard_hypercube(num_sites, u, eps, hop, mu, beta, periodic=True)
     exp_k, nu, config = dqmc.init_qmc(model, num_timesteps, 0)
     bmats_up, bmats_dn = dqmc.compute_timestep_mats(exp_k, nu, config)
-    gf_up, gf_dn = dqmc.compute_greens(bmats_up, bmats_dn, t)
+    gf_up, gf_dn, sgns = dqmc.init_greens(bmats_up, bmats_dn, t)
 
     # -----------Update Green's function --------------
     dqmc.update_greens(nu, config, gf_up, gf_dn, i, t)
     dqmc.update(exp_k, nu, config, bmats_up, bmats_dn, i, t)
-    gf_up_ref, gf_dn_ref = dqmc.compute_greens(bmats_up, bmats_dn, t)
+    gf_up_ref, gf_dn_ref, sgns = dqmc.init_greens(bmats_up, bmats_dn, t)
     # -------------------------------------------------
 
     assert_array_almost_equal(gf_up, gf_up_ref, decimal=5)
@@ -255,14 +255,14 @@ def test_update_greens_blas(u, beta, i):
     exp_k, nu, config = dqmc.init_qmc(model, num_timesteps, 0)
     bmats_up, bmats_dn = dqmc.compute_timestep_mats(exp_k, nu, config)
 
-    gf_up, gf_dn = dqmc.compute_greens(bmats_up, bmats_dn, t)
+    gf_up, gf_dn, sgns = dqmc.init_greens(bmats_up, bmats_dn, t)
 
     # -----------Update Green's function --------------
     dqmc.update_greens_blas(nu, config, gf_up, gf_dn, i, t)
     # -------------------------------------------------
     dqmc.update(exp_k, nu, config, bmats_up, bmats_dn, i, t)
 
-    gf_up_ref, gf_dn_ref = dqmc.compute_greens(bmats_up, bmats_dn, t)
+    gf_up_ref, gf_dn_ref, sgns = dqmc.init_greens(bmats_up, bmats_dn, t)
 
     assert_array_almost_equal(gf_up, gf_up_ref, decimal=8)
     assert_array_almost_equal(gf_dn, gf_dn_ref, decimal=8)
@@ -280,13 +280,13 @@ def test_wrap_up_greens(u, beta, t):
     bmats_up, bmats_dn = dqmc.compute_timestep_mats(exp_k, nu, config)
 
     # Compute Green's function of time slice `t`
-    gf_up, gf_dn = dqmc.compute_greens(bmats_up, bmats_dn, t)
+    gf_up, gf_dn, sgns = dqmc.init_greens(bmats_up, bmats_dn, t)
 
     # Wrap Greens function to next time slice `t+1`
     dqmc.wrap_up_greens(bmats_up, bmats_dn, gf_up, gf_dn, t)
 
     # Re-compute Green's function for next time slice `t+1`
-    gf_up_ref, gf_dn_ref = dqmc.compute_greens(bmats_up, bmats_dn, t+1)
+    gf_up_ref, gf_dn_ref, sgns = dqmc.init_greens(bmats_up, bmats_dn, t+1)
 
     assert_array_almost_equal(gf_up_ref, gf_up, decimal=5)
     assert_array_almost_equal(gf_dn_ref, gf_dn, decimal=5)
@@ -304,13 +304,13 @@ def test_wrap_down_greens(u, beta, t):
     bmats_up, bmats_dn = dqmc.compute_timestep_mats(exp_k, nu, config)
 
     # Compute Green's function of time slice `t`
-    gf_up, gf_dn = dqmc.compute_greens(bmats_up, bmats_dn, t)
+    gf_up, gf_dn, sgns = dqmc.init_greens(bmats_up, bmats_dn, t)
 
     # Wrap Greens function to next time slice `t+1`
     dqmc.wrap_down_greens(bmats_up, bmats_dn, gf_up, gf_dn, t)
 
     # Re-compute Green's function for next time slice `t+1`
-    gf_up_ref, gf_dn_ref = dqmc.compute_greens(bmats_up, bmats_dn, t-1)
+    gf_up_ref, gf_dn_ref, sgns = dqmc.init_greens(bmats_up, bmats_dn, t-1)
 
     assert_array_almost_equal(gf_up_ref, gf_up, decimal=5)
     assert_array_almost_equal(gf_dn_ref, gf_dn, decimal=5)
