@@ -379,6 +379,9 @@ def matrix_product_sequence_0beta(mats, prod_len, shift):
     n, m = mats[0].shape
     indices = np.arange(num_mats)[::-1]
     indices = np.roll(indices, shift)
+    if prod_len == 1:
+        return mats[indices]
+
     prod_seq = np.zeros((num_seqs, n, m), dtype=np.float64)
     for i in range(num_seqs):
         i0 = i * prod_len
@@ -431,6 +434,9 @@ def matrix_product_sequence_beta0(mats, prod_len, shift):
     n, m = mats[0].shape
     indices = np.arange(num_mats)
     indices = np.roll(indices, -shift)
+    if prod_len == 1:
+        return mats[indices]
+
     prod_seq = np.zeros((num_seqs, n, m), dtype=np.float64)
     for i in range(num_seqs):
         i0 = i * prod_len

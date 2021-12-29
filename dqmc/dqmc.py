@@ -156,7 +156,6 @@ def compute_timestep_mat(exp_k, nu, config, t, sigma):
     b : (N, N) np.ndarray
         The matrix :math:'B_{t, σ}(h_t)'.
     """
-    # return np.dot(exp_k, np.dot(np.diag(np.exp(sigma * nu * config[:, t])), exp_k))
     return exp_k * np.exp(sigma * nu * config[:, t])
 
 
@@ -216,6 +215,11 @@ def update_timestep_mats(exp_k, nu, config, bmats_up, bmats_dn, t):
     """
     bmats_up[t] = compute_timestep_mat(exp_k, nu, config, t, sigma=UP)
     bmats_dn[t] = compute_timestep_mat(exp_k, nu, config, t, sigma=DN)
+
+
+# =========================================================================
+# Green's function methods
+# =========================================================================
 
 
 @njit(nt.UniTuple(float64[:, :], 2)(bmat_t, bmat_t, int64), **jkwargs)
@@ -287,31 +291,27 @@ def _construct_greens(tsm, gf, t, prod_len):
     """Construct the Green's function (I + A)^{-1} with the imaginary-time flow map A"""
     # Calculate imaginary time flow map
     q, d, t, tau, lwork = timeflow_map_0beta(tsm, prod_len, t)
+
     # Construct the matrix D_b^{-1}
     diagb = np.copy(d)
     maskb = np.abs(diagb) < 1
     diagb[maskb] = 1.0
     db_inv = np.diag(1 / diagb)
-
     # Calculate D_s T and store result in T
     n = q.shape[0]
     db_inv_qt, work, info = lapack.dormqr("R", "T", q, tau, db_inv, lwork)
-
     # Calculate D_b^{-1} Q^T + D_s T, store result in T
     for i in range(n):
         if np.abs(d[i]) <= 1.0:
             t[i, :] *= d[i]
     t += db_inv_qt
-
     # Perform LU decomposition of D_b^{-1} Q^T + D_s T
     t_lu, jpvt, info = lapack.dgetrf(t)
-
     # Calculate sign/determinant of (D_b^{-1} Q^T + D_s T)^{-1} (D_b^{-1} Q^T)
     sign = 1
     for i in range(n):
         if (t_lu[i, i] < 0) ^ (jpvt[i] != i) ^ (db_inv[i, i] < 0) ^ (tau[i] > 0):
             sign *= -1
-
     # Calculate (D_b^{-1} Q^T + D_s T)^{-1} (D_b^{-1} Q^T) and overwrite gf
     _gf, info = lapack.dgetrs(t_lu, jpvt, db_inv_qt)
     gf[:, :] = _gf
@@ -386,7 +386,7 @@ def update(exp_k, nu, config, bmats_up, bmats_dn, i, t):
 
 
 # =========================================================================
-# Rank-1 update implementation
+# Rank-1 update Monte carlo methods
 # =========================================================================
 
 
