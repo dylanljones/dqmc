@@ -50,6 +50,18 @@ class Parameters:
     def beta(self):
         return self.num_timesteps * self.dt
 
+    @beta.setter
+    def beta(self, beta):
+        self.dt = beta / self.num_timesteps
+
+    @property
+    def temp(self):
+        return 1 / (self.num_timesteps * self.dt)
+
+    @temp.setter
+    def temp(self, temp):
+        self.dt = 1 / (temp * self.num_timesteps)
+
 
 def parse(file):
     shape = 0

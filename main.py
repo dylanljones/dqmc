@@ -39,6 +39,7 @@ def parse_args(argv=None):
     parser.add_argument("-t", type=str, nargs="+")
     parser.add_argument("-mu", type=str, nargs="+")
     parser.add_argument("-dt", type=str, nargs="+")
+    parser.add_argument("-temp", type=str, nargs="+")
     parser.add_argument("--plot", "-p", type=str, default="moment",
                         choices=["nup", "ndn", "n2", "moment"])
     args = parser.parse_args(argv)
