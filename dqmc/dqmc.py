@@ -755,10 +755,8 @@ def dqmc_iteration(exp_k, nu, config, bmats_up, bmats_dn, gf_up, gf_dn, sgns,
         tp1 = t + 1
         if nwraps and tp1 % nwraps == 0:
             if nprod > 0:
-                logger.debug("Recomputing GF (ASvQRD)")
                 compute_greens_qrd(bmats_up, bmats_dn, gf_up, gf_dn, sgns, tp1, nprod)
             else:
-                logger.debug("Recomputing GF")
                 compute_greens(bmats_up, bmats_dn, gf_up, gf_dn, sgns, tp1)
         else:
             wrap_up_greens(bmats_up, bmats_dn, gf_up, gf_dn, t)

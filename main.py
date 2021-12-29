@@ -127,7 +127,7 @@ def main():
         plt.plot(x, y)
         plt.show()
     else:
-        logger.setLevel(logging.INFO)
+        logger.setLevel(logging.DEBUG)
 
         log_parameters(p)
         logger.info("Starting DQMC simulation...")
