@@ -578,7 +578,6 @@ def timeflow_map_0beta(matrices, prod_len, t):
     prod_len : int
         The number of matrices in each product. Has to be a multiple of
         the total number of matrices `L`.
-
     Returns
     -------
     q : (N, N) np.ndarray
@@ -591,6 +590,11 @@ def timeflow_map_0beta(matrices, prod_len, t):
         The scalar factors of the elementary reflectors of the QR decomposition.
     lwork : int
         The used size of the work array.
+
+    References
+    ----------
+    .. [1] Z. Bai et al., “Stable solutions of linear systems involving long chain
+           of matrix multiplications”, in Linear Algebra Appl. 435, p. 659-673 (2011)
     """
     # Pre-compute matrix product sequence
     mats = matrix_product_sequence_0beta(matrices, prod_len, t)
