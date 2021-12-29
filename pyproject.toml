@@ -8,4 +8,4 @@
 [tool.black]
 line-length = 88
 include = '\.pyi?$'
-exclude = "__init__.py|_version.py|utils.py"
+exclude = "__init__.py|__main__.py|_version.py|utils.py"

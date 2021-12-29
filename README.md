@@ -39,7 +39,7 @@ python main.py examples/chain.txt
 ````
 Multiple simulations can be run by supplying keyword arguments. The command
 ````commandline
-python main.py examples/chain.txt -mp 4 -hf -u 1 ... 4 -p moment
+python -m dqmc examples/chain.txt -mp 4 -hf -u 1 ... 4 -p moment
 ````
 will run the DQMC simulation with the parameters of the file for the interaction
 strengths `1, 2, 3, 4` at half filling (`-hf`) and plot the local moment.
@@ -216,3 +216,6 @@ pre-commit run
 5. J. E. Hirsch
    "Discrete Hubbard-Stratonovich transformation for fermion lattice models"
    Phys. Rev. B 29, 4159 (1984) [DOI](https://doi.org/10.1103/PhysRevB.28.4059)
+6. Z. Bai, C.-R. Lee, R.-C. Li and S. Xu
+   "Stable solutions of linear systems involving long chain of matrix multiplications"
+   Linear Algebra Appl. 435, 659-673 (2011) [DOI](https://doi.org/10.1007/978-3-319-09873-9_44)

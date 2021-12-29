@@ -227,7 +227,6 @@ class DQMC:
 
         # Accumulate measurements of default observables
         accumulate_measurements(
-            num_measurements,
             self._gf_up,
             self._gf_dn,
             self._sgns,
@@ -256,6 +255,12 @@ class DQMC:
                 gf_up, gf_dn = self.get_greens()
                 out += callback(gf_up, gf_dn, *args, **kwargs)
             self.it += 1
+        # Normalize observables
+        self.n_up /= sweeps
+        self.n_dn /= sweeps
+        self.n_double /= sweeps
+        self.local_moment /= sweeps
+        out /= sweeps
         return out
 
     def simulate(self, num_equil, num_sampl, callback=None, *args, **kwargs):
@@ -290,3 +295,44 @@ def run_dqmc(p, callback=None):
     except np.linalg.LinAlgError:
         return ()
     return dqmc.n_up, dqmc.n_dn, dqmc.n_double, dqmc.local_moment, extra_results
+
+
+def log_parameters(p):
+    logger.info("_" * 60)
+    logger.info("Simulation parameters")
+    logger.info("")
+    logger.info("     Shape: %s", p.shape)
+    logger.info("         U: %s", p.u)
+    logger.info("         t: %s", p.t)
+    logger.info("       eps: %s", p.eps)
+    logger.info("        mu: %s", p.mu)
+    logger.info("      beta: %s", p.beta)
+    logger.info("      temp: %s", 1 / p.beta)
+    logger.info(" time-step: %s", p.dt)
+    logger.info("         L: %s", p.num_timesteps)
+    logger.info("    nwraps: %s", p.num_wraps)
+    logger.info("   prodLen: %s", p.prod_len)
+    logger.info("    nequil: %s", p.num_equil)
+    logger.info("    nsampl: %s", p.num_sampl)
+    logger.info("    recomp: %s", p.sampl_recomp)
+    logger.info("      seed: %s", p.seed)
+    logger.info("")
+
+
+def log_results(*results):
+    n_up = np.mean(results[0])
+    n_dn = np.mean(results[1])
+    n_double = np.mean(results[2])
+    local_moment = np.mean(results[3])
+
+    logger.info("_" * 60)
+    logger.info("Simulation results")
+    logger.info("")
+    logger.info("     Total density: %8.4f", n_up + n_dn)
+    logger.info("   Spin-up density: %8.4f", n_up)
+    logger.info(" Spin-down density: %8.4f", n_dn)
+    logger.info("  Double occupancy: %8.4f", n_double)
+    logger.info("      Local moment: %8.4f", local_moment)
+    if results[4]:
+        logger.info("   Callback results: %s", results[4])
+    logger.info("")
