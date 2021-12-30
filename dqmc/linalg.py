@@ -12,228 +12,20 @@ import ctypes
 import numpy as np
 from scipy import linalg as la
 from numba.extending import get_cython_function_address
-from numba import njit, float64, int32, int64
-from numba import types as nt
+from numba import njit, float64, int64
+# Try to import Fortran implementation
+try:
+    from .src.timeflow import timeflow_map as _timeflow_map_f
+except ImportError:
+    _timeflow_map_f = None
 
-info_t = nt.Array(int32, 0, "C")
 
-
-_PTR = ctypes.POINTER
-
-_dble = ctypes.c_double
-_char = ctypes.c_char
-_int = ctypes.c_int
-
-_ptr_dble = _PTR(_dble)
-_ptr_char = _PTR(_char)
-_ptr_int = _PTR(_int)
+_dble = ctypes.POINTER(ctypes.c_double)
+_int = ctypes.POINTER(ctypes.c_int)
 
 # dger(M, N, ALPHA, X, INCX, Y, INCY, A, LDA)
-_dger_addr = get_cython_function_address("scipy.linalg.cython_blas", "dger")
-_dger_functype = ctypes.CFUNCTYPE(None,       # Return Value
-                                  _ptr_int,   # M
-                                  _ptr_int,   # N
-                                  _ptr_dble,  # ALPHA
-                                  _ptr_dble,  # X
-                                  _ptr_int,   # INCX
-                                  _ptr_dble,  # Y
-                                  _ptr_int,   # INCY
-                                  _ptr_dble,  # A
-                                  _ptr_int,   # LDA
-                                  )
-_dger_fn = _dger_functype(_dger_addr)
-
-
-# dgeqp3(M, N, A, LDA, JPVT, TAU, WORK, LWORK, INFO)
-_dgeqp3_addr = get_cython_function_address("scipy.linalg.cython_lapack", "dgeqp3")
-_dgeqp3_functype = ctypes.CFUNCTYPE(None,       # Return Value
-                                    _ptr_int,   # M
-                                    _ptr_int,   # N
-                                    _ptr_dble,  # A
-                                    _ptr_int,   # LDA
-                                    _ptr_int,   # JPVT
-                                    _ptr_dble,  # TAU
-                                    _ptr_dble,  # WORK
-                                    _ptr_int,   # LWORK
-                                    _ptr_int    # INFO
-                                    )
-_dgeqp3_fn = _dgeqp3_functype(_dgeqp3_addr)
-
-
-# dorgqr(M, N, K, A, LDA, TAU, WORK, LWORK, INFO)
-_dorgqr_addr = get_cython_function_address("scipy.linalg.cython_lapack", "dorgqr")
-_dorgqr_functype = ctypes.CFUNCTYPE(None,       # Return Value
-                                    _ptr_int,   # M
-                                    _ptr_int,   # N
-                                    _ptr_int,   # K
-                                    _ptr_dble,  # A
-                                    _ptr_int,   # LDA
-                                    _ptr_dble,  # TAU
-                                    _ptr_dble,  # WORK
-                                    _ptr_int,   # LWORK
-                                    _ptr_int    # INFO
-                                    )
-_dorgqr_fn = _dorgqr_functype(_dorgqr_addr)
-
-
-@njit(
-    nt.Tuple((float64[:, ::1], int32[::1], float64[::1],
-              float64[::1], info_t))(float64[:, :], int64),
-    nogil=True, cache=True
-)
-def lapack_dgeqp3(a, lwork):
-    """Computes a QR factorization with column pivoting of a matrix using Level 3 BLAS.
-
-    Calls the LAPACK subroutine `dgeqp3(M, N, A, LDA, JPVT, TAU, WORK, LWORK, INFO)`.
-
-    Parameters
-    ----------
-    a : (M, N) np.ndarray
-        The input matrix to compute the QR decomposition.
-    lwork : int
-    Returns
-    -------
-    qr : (M, N) np.ndarray
-        The upper triangle of the array contains the `min(M,N)`-by-`N` upper
-        trapezoidal matrix `R`; the elements below the diagonal, together with
-        the array `tau`, represent the orthogonal matrix `Q` as a product of
-        `min(M,N)` elementary reflectors.
-    jpvt : (N,) np.ndarray
-        If `JPVT(j)=K`, then the j-th column of `A*P` was the the k-th column of `A`.
-    tau : (K,) np.ndarray
-        The scalar factors of the elementary reflectors, where `K = min(M, N)`.
-    work : (L, ) np.ndarray
-        The work array used internally.
-    info : int
-        Is equal to `0` if successful exit, < 0: if INFO = -i, the i-th argument
-        had an illegal value.
-
-    Notes
-    -----
-    Computes the QR factorization with column pivoting of a matrix A
-    ..math::
-        A * P = Q * R
-
-    The matrix Q is represented as a product of elementary reflectors
-    ..math::
-        Q = H(1) H(2) . . . H(k), where k = min(m,n).
-
-    Each H(i) has the form
-     ..math::
-        H(i) = I - tau * v * v**T
-
-    where tau is a real scalar, and v is a real/complex vector
-    with v(1:i-1) = 0 and v(i) = 1; v(i+1:m) is stored on exit in
-    A(i+1:m,i), and tau in TAU(i).
-    """
-    _m, _n = a.shape
-
-    m = np.array(_m, dtype=np.int32)
-    n = np.array(_n, dtype=np.int32)
-    qr = np.ascontiguousarray(a)
-    lda = np.array(_m, dtype=np.int32)
-    jpvt = np.zeros(_n, dtype=np.int32)
-    tau = np.zeros(min(_m, _n), dtype=np.float64)
-    info = np.array(0, dtype=np.int32)
-
-    if lwork == -1:
-        work = np.zeros(1, dtype=np.float64)
-        _lwork = np.array(-1, dtype=np.int32)
-
-        # First call with LWORK=-1 to compute optimal size of WORK array
-        _dgeqp3_fn(m.ctypes,
-                   n.ctypes,
-                   qr.view(np.float64).ctypes,
-                   lda.ctypes,
-                   jpvt.view(np.int32).ctypes,
-                   tau.view(np.float64).ctypes,
-                   work.view(np.float64).ctypes,
-                   _lwork.ctypes,
-                   info.ctypes)
-        # Optimal LWORK is stored in first element of WORK
-        lwork = int(work[0])
-
-    _lwork = np.array(lwork, dtype=np.int32)
-    work = np.zeros(lwork, dtype=np.float64)
-
-    # Actually compute QR decomposition
-    _dgeqp3_fn(m.ctypes,
-               n.ctypes,
-               qr.view(np.float64).ctypes,
-               lda.ctypes,
-               jpvt.view(np.int32).ctypes,
-               tau.view(np.float64).ctypes,
-               work.view(np.float64).ctypes,
-               _lwork.ctypes,
-               info.ctypes)
-    # Python indices start at 0, Fortran at 1
-    # jpvt -= 1
-
-    return qr, jpvt, tau, work, info
-
-
-@njit(
-    nt.Tuple((float64[:, ::1], float64[::1], info_t))(float64[:, :], float64[:], int64),
-    nogil=True, cache=True
-)
-def lapack_dorgqr(qr, tau, lwork):
-    """Generates the matrix Q with from the result of a QR decomposition.
-
-     Calls the LAPACK subroutine `dorgqr(M, N, K, A, LDA, TAU, WORK, LWORK, INFO)`.
-
-    Returns
-    -------
-
-    Notes
-    -----
-    Generates an M-by-N real matrix Q with orthonormal columns,
-    which is defined as the first N columns of a product of K elementary
-    reflectors H of order M.
-    ..math::
-        Q  =  H(1) H(2) . . . H(k).
-    """
-    _m, _n = qr.shape
-
-    m = np.array(_m, dtype=np.int32)
-    n = np.array(_n, dtype=np.int32)
-    k = np.array(len(tau), dtype=np.int32)
-    q = np.ascontiguousarray(qr)
-    lda = np.array(_m, dtype=np.int32)
-    info = np.array(0, dtype=np.int32)
-
-    if lwork == -1:
-        work = np.zeros(1, dtype=np.float64)
-        _lwork = np.array(-1, dtype=np.int32)
-
-        # First call with LWORK=-1 to compute optimal size of WORK array
-        _dorgqr_fn(m.ctypes,
-                   n.ctypes,
-                   k.ctypes,
-                   q.view(np.float64).ctypes,
-                   lda.ctypes,
-                   tau.view(np.float64).ctypes,
-                   work.view(np.float64).ctypes,
-                   _lwork.ctypes,
-                   info.ctypes)
-
-        # Optimal LWORK is stored in first element of WORK
-        lwork = int(work[0])
-
-    _lwork = np.array(lwork, dtype=np.int32)
-    work = np.zeros(lwork, dtype=np.float64)
-
-    # Actually compute Q-matrix
-    _dorgqr_fn(m.ctypes,
-               n.ctypes,
-               k.ctypes,
-               q.view(np.float64).ctypes,
-               lda.ctypes,
-               tau.view(np.float64).ctypes,
-               work.view(np.float64).ctypes,
-               _lwork.ctypes,
-               info.ctypes)
-
-    return q, work, info
+_ft = ctypes.CFUNCTYPE(None, _int, _int, _dble, _dble, _int, _dble, _int, _dble, _int)
+_dger_fn = _ft(get_cython_function_address("scipy.linalg.cython_blas", "dger"))
 
 
 @njit((float64, float64[:], float64[:], float64[:, :]), nogil=True, cache=True)
@@ -565,6 +357,35 @@ def asvqrd_prod_beta0(matrices, prod_len, t):
     return _asvqrd_prod_construct(q, d, t_prod)
 
 
+def _timeflow_map(mats):
+    # Compute first QR decomposition with column pivoting
+    q, jpvt, tau, work, info = la.lapack.dgeqp3(mats[0])
+    # Extract diagonal elements of R (upper triangular matrix of Q)
+    d = np.array(np.diag(q))
+    d[d == 0.0] = 1.0
+    # Compute T_1 = D^{-1} R P:
+    # Multiply columns of R with 1/d and apply column pivoting
+    t = (np.triu(q).T / d).T[:, np.argsort(jpvt)]
+    for i in range(1, len(mats)):
+        lwork = len(work)  # noqa
+        # Multiply with Q from the right, overwriting the 'W' matrix
+        w, work, info = la.lapack.dormqr("R", "N", q, tau, mats[i], lwork)
+        # Scale by previous diagonal entries
+        w *= d
+        # Pre-pivot 'W' and perform QR-decomposition
+        jpvt = np.argsort(la.norm(w, axis=0))[::-1]
+        q, tau, work, info = la.lapack.dgeqrf(w[:, jpvt])
+        # Extract diagonal elements of R (upper triangular matrix of Q)
+        d = np.array(np.diag(q))
+        d[d == 0.0] = 1.0
+        # Multiply 1/d with the upper triangular R matrix
+        # and multiply current T matrix with the pivoted product of the previous T's
+        t = np.dot((np.triu(q).T / d).T, t[jpvt, :])
+
+    lwork = len(work)  # noqa
+    return q, d, t, tau, lwork
+
+
 def timeflow_map_0beta(matrices, prod_len, t):
     """Computes the UDT decomposition for simulations in ascending time flow order.
 
@@ -598,33 +419,12 @@ def timeflow_map_0beta(matrices, prod_len, t):
     """
     # Pre-compute matrix product sequence
     mats = matrix_product_sequence_0beta(matrices, prod_len, t)
-
-    # Compute first QR decomposition with column pivoting
-    q, jpvt, tau, work, info = la.lapack.dgeqp3(mats[0])
-    # Extract diagonal elements of R (upper triangular matrix of Q)
-    d = np.array(np.diag(q))
-    d[d == 0.0] = 1.0
-    # Compute T_1 = D^{-1} R P:
-    # Multiply columns of R with 1/d and apply column pivoting
-    t = (np.triu(q).T / d).T[:, np.argsort(jpvt)]
-    for i in range(1, len(mats)):
-        lwork = len(work)  # noqa
-        # Multiply with Q from the right, overwriting the 'W' matrix
-        w, work, info = la.lapack.dormqr("R", "N", q, tau, mats[i], lwork)
-        # Scale by previous diagonal entries
-        w *= d
-        # Pre-pivot 'W' and perform QR-decomposition
-        jpvt = np.argsort(la.norm(w, axis=0))[::-1]
-        q, tau, work, info = la.lapack.dgeqrf(w[:, jpvt])
-        # Extract diagonal elements of R (upper triangular matrix of Q)
-        d = np.array(np.diag(q))
-        d[d == 0.0] = 1.0
-        # Multiply 1/d with the upper triangular R matrix
-        # and multiply current T matrix with the pivoted product of the previous T's
-        t = np.dot((np.triu(q).T / d).T, t[jpvt, :])
-
-    lwork = len(work)  # noqa
-    return q, d, t, tau, lwork
+    if _timeflow_map_f is not None:
+        # Call fortran implementation
+        q, d, t, tau, lwork, info = _timeflow_map_f(mats)
+        return q, d, t, tau, lwork
+    # Call Scipy implementation
+    return _timeflow_map(mats)
 
 
 def timeflow_map_beta0(matrices, prod_len, t):
@@ -656,30 +456,9 @@ def timeflow_map_beta0(matrices, prod_len, t):
     """
     # Pre-compute matrix product sequence
     mats = matrix_product_sequence_beta0(matrices, prod_len, t)
-
-    # Compute first QR decomposition with column pivoting
-    q, jpvt, tau, work, info = la.lapack.dgeqp3(mats[0])
-    # Extract diagonal elements of R (upper triangular matrix of Q)
-    d = np.array(np.diag(q))
-    d[d == 0.0] = 1.0
-    # Compute T_1 = D^{-1} R P:
-    # Multiply columns of R with 1/d and apply column pivoting
-    t = (np.triu(q).T / d).T[:, np.argsort(jpvt)]
-    for i in range(1, len(mats)):
-        lwork = len(work)  # noqa
-        # Multiply with Q from the right, overwriting the 'W' matrix
-        w, work, info = la.lapack.dormqr("R", "N", q, tau, mats[i], lwork)
-        # Scale by previous diagonal entries
-        w *= d
-        # Pre-pivot 'W' and perform QR-decomposition
-        jpvt = np.argsort(la.norm(w, axis=0))[::-1]
-        q, tau, work, info = la.lapack.dgeqrf(w[:, jpvt])
-        # Extract diagonal elements of R (upper triangular matrix of Q)
-        d = np.array(np.diag(q))
-        d[d == 0.0] = 1.0
-        # Multiply 1/d with the upper triangular R matrix
-        # and multiply current T matrix with the pivoted product of the previous T's
-        t = np.dot((np.triu(q).T / d).T, t[jpvt, :])
-
-    lwork = len(work)  # noqa
-    return q, d, t, tau, lwork
+    if _timeflow_map_f is not None:
+        # Call fortran implementation
+        q, d, t, tau, lwork, info = _timeflow_map_f(mats)
+        return q, d, t, tau, lwork
+    # Call Scipy implementation
+    return _timeflow_map(mats)
