@@ -355,8 +355,6 @@ def compute_greens_qrd(bmats_up, bmats_dn, gf_up, gf_dn, sgns, t, prod_len=1):
     """
     sgns[0] = _construct_greens(bmats_up, gf_up, t, prod_len)
     sgns[1] = _construct_greens(bmats_dn, gf_dn, t, prod_len)
-    # gf_up[:, :] = asvqrd_prod_0beta(bmats_up, t, prod_len)
-    # gf_dn[:, :] = asvqrd_prod_0beta(bmats_dn, t, prod_len)
     # sgns[0] = np.sign(np.linalg.det(gf_up))
     # sgns[1] = np.sign(np.linalg.det(gf_dn))
 
