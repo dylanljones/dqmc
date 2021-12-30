@@ -24,29 +24,26 @@ or the `setup.py` script
 python setup.py install
 ````
 
-To compile the Fortran source code, `cd` into `/dqmc/src` and run
-````commandline
-python -m numpy.f2py -llapack -lblas -c qrp.f90 -m qrp
-````
+Run the `Makefile` to compile the Fortran source code!
 
 
 ## Quickstart
 
-To run a simulation, run the `main.py` script with a configuration text file
+To run a simulation, run the `python -m dqmc` command with a configuration text file
 as parameter, for example:
 ````commandline
-python main.py examples/chain.txt
+python -m dqmc examples/chain.txt
 ````
 Multiple simulations can be run by supplying keyword arguments. The command
 ````commandline
-python main.py examples/chain.txt -mp 4 -hf -u 1 ... 4 -p moment
+python -m dqmc examples/chain.txt -mp 4 -hf -u 1 ... 4 -p moment
 ````
 will run the DQMC simulation with the parameters of the file for the interaction
 strengths `1, 2, 3, 4` at half filling (`-hf`) and plot the local moment.
 In order to use multiprocessing the number of processes can be specified by the
 `-mp` argument. Use
 ````commandline
-python main.py --help
+python -m dqmc --help
 ````
 for more information.
 
@@ -84,7 +81,8 @@ for more information.
    Integer flag if the Green's functions are recomputed before performing
    measurements (1) or not (0). The default is 1.
 
-## Usage
+
+## API Usage
 
 ### Initializing the Hubbard model
 
@@ -216,3 +214,6 @@ pre-commit run
 5. J. E. Hirsch
    "Discrete Hubbard-Stratonovich transformation for fermion lattice models"
    Phys. Rev. B 29, 4159 (1984) [DOI](https://doi.org/10.1103/PhysRevB.28.4059)
+6. Z. Bai, C.-R. Lee, R.-C. Li and S. Xu
+   "Stable solutions of linear systems involving long chain of matrix multiplications"
+   Linear Algebra Appl. 435, 659-673 (2011) [DOI](https://doi.org/10.1007/978-3-319-09873-9_44)

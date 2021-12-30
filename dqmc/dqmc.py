@@ -32,6 +32,12 @@ from numba import types as nt
 from .model import HubbardModel  # noqa: F401
 from .linalg import blas_dger, timeflow_map_0beta
 
+# Try to import Fortran implementation
+try:
+    from .src.greens import construct_greens as _construct_greens_f
+except ImportError:
+    _construct_greens_f = None
+
 logger = logging.getLogger("dqmc")
 
 expk_t = float64[:, :]
@@ -53,7 +59,6 @@ def init_configuration(num_sites: int, num_timesteps: int) -> np.ndarray:
         The number of sites `N` of the lattice model.
     num_timesteps : int
         The number of time steps `L` used in the Monte Carlo simulation.
-
     Returns
     -------
     config : (N, L) np.ndarray
@@ -76,7 +81,6 @@ def init_qmc(model, num_timesteps, seed):
         The number of time steps `L` used in the Monte Carlo simulation.
     seed : int
         A seed to be set before creating the cinfiguration.
-
     Returns
     -------
     exp_k : np.ndarray
@@ -128,16 +132,6 @@ def init_qmc(model, num_timesteps, seed):
 def compute_timestep_mat(exp_k, nu, config, t, sigma):
     r"""Computes the time step matrix :math:'B_σ(h_t)'.
 
-    Notes
-    -----
-    The time step matrix :math:'B_σ(h_t)' is defined as
-    ..math::
-        B_σ(h_t) = e^k e^{σ ν V_t(h_t)}
-
-    Simply multiplying the matrix exponential of the kinetic Hamiltonian
-    with the diagonal elements of the second matrix yields the same result
-    as using `np.dot` with `np.diag`.
-
     Parameters
     ----------
     exp_k : (N, N) np.ndarray
@@ -150,25 +144,23 @@ def compute_timestep_mat(exp_k, nu, config, t, sigma):
         The index of the time step.
     sigma : int
         The spin σ (-1 or +1).
-
     Returns
     -------
     b : (N, N) np.ndarray
         The matrix :math:'B_{t, σ}(h_t)'.
-    """
-    # return np.dot(exp_k, np.dot(np.diag(np.exp(sigma * nu * config[:, t])), exp_k))
-    return exp_k * np.exp(sigma * nu * config[:, t])
-
-
-@njit(nt.UniTuple(bmat_t, 2)(expk_t, float64, conf_t), **jkwargs)
-def compute_timestep_mats(exp_k, nu, config):
-    r"""Computes the time step matrices :math:'B_σ(h_t)' for all times and both spins.
 
     Notes
     -----
     The time step matrix :math:'B_σ(h_t)' is defined as
     ..math::
         B_σ(h_t) = e^k e^{σ ν V_t(h_t)}
+    """
+    return exp_k * np.exp(sigma * nu * config[:, t])
+
+
+@njit(nt.UniTuple(bmat_t, 2)(expk_t, float64, conf_t), **jkwargs)
+def compute_timestep_mats(exp_k, nu, config):
+    r"""Computes the time step matrices :math:'B_σ(h_t)' for all times and both spins.
 
     Parameters
     ----------
@@ -178,13 +170,18 @@ def compute_timestep_mats(exp_k, nu, config):
         The parameter ν defined by :math:'\cosh(ν) = e^{U Δτ / 2}'
     config : (N, L) np.ndarray
         The configuration or Hubbard-Stratonovich field.
-
     Returns
     -------
     bmats_up : (L, N, N) np.ndarray
         The spin-up time step matrices.
     bmats_dn : (L, N, N) np.ndarray
         The spin-down time step matrices.
+
+    Notes
+    -----
+    The time step matrix :math:'B_σ(h_t)' is defined as
+    ..math::
+        B_σ(h_t) = e^k e^{σ ν V_t(h_t)}
     """
     num_sites, num_timesteps = config.shape
     bmats_up = np.zeros((num_timesteps, num_sites, num_sites), dtype=np.float64)
@@ -218,6 +215,11 @@ def update_timestep_mats(exp_k, nu, config, bmats_up, bmats_dn, t):
     bmats_dn[t] = compute_timestep_mat(exp_k, nu, config, t, sigma=DN)
 
 
+# =========================================================================
+# Green's function methods
+# =========================================================================
+
+
 @njit(nt.UniTuple(float64[:, :], 2)(bmat_t, bmat_t, int64), **jkwargs)
 def compute_m_matrices(bmats_up, bmats_dn, t):
     r"""Computes the matrix :math:'M_σ = I + A_σ(h)' for both spins.
@@ -230,7 +232,6 @@ def compute_m_matrices(bmats_up, bmats_dn, t):
         The spin-down time step matrices.
     t : int
         The current time-step index :math:'t'.
-
     Returns
     -------
     m_up : (N, N) np.ndarray
@@ -267,9 +268,9 @@ def compute_greens(bmats_up, bmats_dn, gf_up, gf_dn, sgns, t):
         The spin-up time step matrices.
     bmats_dn : (L, N, N) np.ndarray
         The spin-down time step matrices.
-    gf_up : np.ndarray
+    gf_up : (N, N) np.ndarray
         Output array for the spin-up Green's function.
-    gf_dn : np.ndarray
+    gf_dn : (N, N) np.ndarray
         Output array for the spin-down Green's function.
     sgns : (2, ) np.ndarray
         The signs of the deterinants.
@@ -284,35 +285,54 @@ def compute_greens(bmats_up, bmats_dn, gf_up, gf_dn, sgns, t):
 
 
 def _construct_greens(tsm, gf, t, prod_len):
-    """Construct the Green's function (I + A)^{-1} with the imaginary-time flow map A"""
+    """Construct the Green's function (I + A)^{-1} with the imaginary-time flow map A.
+
+    Parameters
+    ----------
+    tsm :  : (L, N, N) np.ndarray
+        The time step matrices for one spin channel.
+    gf : (N, N) np.ndarray
+        The output array for the Green's function.
+    t : int
+        The current time-step index :math:'t'.
+    prod_len : int
+        The number of matrices multiplied explicitly.
+    Returns
+    -------
+    sign : int
+        The sign of the determinant of the Green#s function.
+
+    References
+    ----------
+    .. [1] Z. Bai et al., “Stable solutions of linear systems involving long chain
+           of matrix multiplications”, in Linear Algebra Appl. 435, p. 659-673 (2011)
+    """
     # Calculate imaginary time flow map
     q, d, t, tau, lwork = timeflow_map_0beta(tsm, prod_len, t)
+
     # Construct the matrix D_b^{-1}
     diagb = np.copy(d)
     maskb = np.abs(diagb) < 1
     diagb[maskb] = 1.0
     db_inv = np.diag(1 / diagb)
-
     # Calculate D_s T and store result in T
     n = q.shape[0]
     db_inv_qt, work, info = lapack.dormqr("R", "T", q, tau, db_inv, lwork)
-
     # Calculate D_b^{-1} Q^T + D_s T, store result in T
     for i in range(n):
         if np.abs(d[i]) <= 1.0:
             t[i, :] *= d[i]
     t += db_inv_qt
-
     # Perform LU decomposition of D_b^{-1} Q^T + D_s T
     t_lu, jpvt, info = lapack.dgetrf(t)
-
     # Calculate sign/determinant of (D_b^{-1} Q^T + D_s T)^{-1} (D_b^{-1} Q^T)
     sign = 1
     for i in range(n):
         if (t_lu[i, i] < 0) ^ (jpvt[i] != i) ^ (db_inv[i, i] < 0) ^ (tau[i] > 0):
             sign *= -1
-
     # Calculate (D_b^{-1} Q^T + D_s T)^{-1} (D_b^{-1} Q^T) and overwrite gf
+    # DGETRS solves a system of linear equations A * X = B with a general N-by-N
+    # matrix A using the LU factorization computed by DGETRF.
     _gf, info = lapack.dgetrs(t_lu, jpvt, db_inv_qt)
     gf[:, :] = _gf
 
@@ -320,7 +340,7 @@ def _construct_greens(tsm, gf, t, prod_len):
 
 
 def compute_greens_qrd(bmats_up, bmats_dn, gf_up, gf_dn, sgns, t, prod_len=1):
-    r"""Computes the Green's functions for both spins.
+    r"""Computes the Green's functions for both spins via ASvQRD stabilization.
 
     Parameters
     ----------
@@ -333,18 +353,20 @@ def compute_greens_qrd(bmats_up, bmats_dn, gf_up, gf_dn, sgns, t, prod_len=1):
     gf_dn : np.ndarray
         Output array for the spin-down Green's function.
     sgns : (2, ) np.ndarray
-        The signs of the deterinants.
+        The signs of the determinants of the Green's functions.
     t : int
         The current time-step index :math:'t'.
     prod_len : int
         The number of matrices multiplied explicitly
     """
-    sgns[0] = _construct_greens(bmats_up, gf_up, t, prod_len)
-    sgns[1] = _construct_greens(bmats_dn, gf_dn, t, prod_len)
-    # gf_up[:, :] = asvqrd_prod_0beta(bmats_up, t, prod_len)
-    # gf_dn[:, :] = asvqrd_prod_0beta(bmats_dn, t, prod_len)
-    # sgns[0] = np.sign(np.linalg.det(gf_up))
-    # sgns[1] = np.sign(np.linalg.det(gf_dn))
+    if _construct_greens_f is None:
+        sgns[0] = _construct_greens(bmats_up, gf_up, t, prod_len)
+        sgns[1] = _construct_greens(bmats_dn, gf_dn, t, prod_len)
+    else:
+        q, d, tmat, tau, lwork = timeflow_map_0beta(bmats_up, prod_len, t)
+        gf_up[:, :], sgns[0], logdet_up = _construct_greens_f(q, d, tmat, tau, lwork)
+        q, d, tmat, tau, lwork = timeflow_map_0beta(bmats_dn, prod_len, t)
+        gf_dn[:, :], sgns[1], logdet_dn = _construct_greens_f(q, d, tmat, tau, lwork)
 
 
 def init_greens(bmats_up, bmats_dn, t, prod_len=0):
@@ -358,6 +380,11 @@ def init_greens(bmats_up, bmats_dn, t, prod_len=0):
     else:
         compute_greens(bmats_up, bmats_dn, gf_up, gf_dn, sgns, t)
     return gf_up, gf_dn, sgns
+
+
+# =========================================================================
+# Rank-1 update Monte carlo methods
+# =========================================================================
 
 
 @njit(void(expk_t, float64, conf_t, bmat_t, bmat_t, int64, int64), **jkwargs)
@@ -385,22 +412,9 @@ def update(exp_k, nu, config, bmats_up, bmats_dn, i, t):
     update_timestep_mats(exp_k, nu, config, bmats_up, bmats_dn, t)
 
 
-# =========================================================================
-# Rank-1 update implementation
-# =========================================================================
-
-
 @njit(nt.float64(float64, conf_t, gmat_t, gmat_t, int64, int64), **jkwargs)
 def compute_acceptance_fast(nu, config, gf_up, gf_dn, i, t):
     r"""Computes the Metropolis acceptance via the fast update scheme.
-
-    Notes
-    -----
-    A spin-flip of site i and time t is accepted, if d<r:
-    ..math::
-        α_σ = e^{-2 σ ν s(i, t)} - 1
-        d_σ = 1 + (1 - G_{ii, σ}) α_σ
-        d = d_↑ d_↓
 
     Parameters
     ----------
@@ -416,11 +430,18 @@ def compute_acceptance_fast(nu, config, gf_up, gf_dn, i, t):
         The site index :math:'i' of the proposed spin-flip.
     t : int
         The time-step index :math:'t' of the proposed spin-flip.
-
     Returns
     -------
     d : float
         The Metropolis acceptance ratio.
+
+    Notes
+    -----
+    A spin-flip of site i and time t is accepted, if d<r:
+    ..math::
+        α_σ = e^{-2 σ ν s(i, t)} - 1
+        d_σ = 1 + (1 - G_{ii, σ}) α_σ
+        d = d_↑ d_↓
     """
     arg = -2 * nu * config[i, t]
     alpha_up = np.expm1(UP * arg)
@@ -551,7 +572,7 @@ def wrap_up_greens(bmats_up, bmats_dn, gf_up, gf_dn, t):
     r"""Wraps the Green's functions from the time step :math:'t' up to :math:'t+1'.
 
     This method has to be called after a time-step in order to prepare the
-    Green's function for the next hogher time slice.
+    Green's function for the next higher time slice.
 
     Parameters
     ----------
@@ -565,6 +586,19 @@ def wrap_up_greens(bmats_up, bmats_dn, gf_up, gf_dn, t):
         The spin-down Green's function.
     t : int
         The time-step index :math:'t' of the last iteration over all sites.
+
+    Notes
+    -----
+    Wrapping the Green's function from the time step :math:'t' up to :math:'t+1'
+    is defined as
+    ..math::
+        G_σ(t+1) = B_σ(t) G_σ(t) B_σ^{-1}(t)
+
+    References
+    ----------
+    .. [1] Z. Bai et al., “Numerical Methods for Quantum Monte Carlo Simulations
+           of the Hubbard Model”, in Series in Contemporary Applied Mathematics,
+           Vol. 12 (June 2009), p. 1.
     """
     b_up = bmats_up[t]
     b_dn = bmats_dn[t]
@@ -591,6 +625,19 @@ def wrap_down_greens(bmats_up, bmats_dn, gf_up, gf_dn, t):
         The spin-down Green's function.
     t : int
         The time-step index :math:'t' of the last iteration over all sites.
+
+    Notes
+    -----
+    Wrapping the Green's function from the time step :math:'t' up to :math:'t-1'
+    is defined as
+    ..math::
+        G_σ(t-1) = B_σ(t-1) G_σ(t-1) B_σ^{-1}(t-1)
+
+    References
+    ----------
+    .. [1] Z. Bai et al., “Numerical Methods for Quantum Monte Carlo Simulations
+           of the Hubbard Model”, in Series in Contemporary Applied Mathematics,
+           Vol. 12 (June 2009), p. 1.
     """
     idx = t - 1
     b_up = bmats_up[idx]
@@ -675,6 +722,7 @@ def dqmc_iteration_jit(exp_k, nu, config, bmats_up, bmats_dn, gf_up, gf_dn, sgns
 
 @njit(int64(float64, conf_t, gmat_t, gmat_t, int64[::1], int64[::1], int64), **jkwargs)
 def dqmc_time_step(nu, config, gf_up, gf_dn, sgns, sites, t):
+    """Accelerated inner loop of the DQMC iteration."""
     # Iterate over all lattice sites randomly
     accepted = 0
     np.random.shuffle(sites)
@@ -765,12 +813,38 @@ def dqmc_iteration(exp_k, nu, config, bmats_up, bmats_dn, gf_up, gf_dn, sgns,
 
 
 @njit(
-    (int64, gmat_t, gmat_t, int64[::1], float64[:], float64[:], float64[:], float64[:]),
+    (gmat_t, gmat_t, int64[::1], float64[:], float64[:], float64[:], float64[:]),
     **jkwargs
 )
-def accumulate_measurements(sweeps, gf_up, gf_dn, sgns, n_up, n_dn, n2, mz):
-    sign = sgns[0] * sgns[1]
-    signfac = sign / sweeps
+def accumulate_measurements(gf_up, gf_dn, sgns, n_up, n_dn, n2, mz):
+    """Acummulate (unnormalized) equal time measurements of observables.
+
+    Parameters
+    ----------
+    gf_up : (N, N) np.ndarray
+        The spin-up Green's function matrix :math:`G_↑`.
+    gf_dn : (N, N) np.ndarray
+        The spin-down Green's function matrix :math:`G_↓`.
+    sgns : (2,) np.ndarray
+        The sign of the determinant of the Green's function of both spins.
+    n_up : (N,) np.ndarray
+        The output array of the spin-up occupation :math:`<n_↑>`.
+    n_dn : (N,) np.ndarray
+        The output array of the spin-down occupation :math:`<n_↓>`.
+    n2 : (N,) np.ndarray
+        The output array of the double occupation :math:`<n_↑ n_↓>`.
+    mz : (N,) np.ndarray
+        The output array of the local moment :math:`<m_z^2>`.
+
+    Notes
+    -----
+    The measured observables are defined as
+    ..math::
+        <n_{iσ}>  = 1 - [G_σ]_{ii}
+        <n_↑ n_↓> = (1 - [G_↑]_{ii}) (1 - [G_↓]_{ii})
+        <m_z^2> = <n_↑> + <n_↓> - 2 <n_↑ n_↓>
+    """
+    signfac = sgns[0] * sgns[1]
 
     _n_up = 1 - np.diag(gf_up)
     _n_dn = 1 - np.diag(gf_dn)
