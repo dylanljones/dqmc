@@ -32,6 +32,12 @@ from numba import types as nt
 from .model import HubbardModel  # noqa: F401
 from .linalg import blas_dger, timeflow_map_0beta
 
+# Try to import Fortran implementation
+try:
+    from .src.greens import construct_greens as _construct_greens_f
+except ImportError:
+    _construct_greens_f = None
+
 logger = logging.getLogger("dqmc")
 
 expk_t = float64[:, :]
@@ -353,10 +359,14 @@ def compute_greens_qrd(bmats_up, bmats_dn, gf_up, gf_dn, sgns, t, prod_len=1):
     prod_len : int
         The number of matrices multiplied explicitly
     """
-    sgns[0] = _construct_greens(bmats_up, gf_up, t, prod_len)
-    sgns[1] = _construct_greens(bmats_dn, gf_dn, t, prod_len)
-    # sgns[0] = np.sign(np.linalg.det(gf_up))
-    # sgns[1] = np.sign(np.linalg.det(gf_dn))
+    if _construct_greens_f is None:
+        sgns[0] = _construct_greens(bmats_up, gf_up, t, prod_len)
+        sgns[1] = _construct_greens(bmats_dn, gf_dn, t, prod_len)
+    else:
+        q, d, tmat, tau, lwork = timeflow_map_0beta(bmats_up, prod_len, t)
+        gf_up[:, :], sgns[0], logdet_up = _construct_greens_f(q, d, tmat, tau, lwork)
+        q, d, tmat, tau, lwork = timeflow_map_0beta(bmats_dn, prod_len, t)
+        gf_dn[:, :], sgns[1], logdet_dn = _construct_greens_f(q, d, tmat, tau, lwork)
 
 
 def init_greens(bmats_up, bmats_dn, t, prod_len=0):
