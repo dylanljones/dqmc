@@ -67,6 +67,8 @@ def parse_args(argv=None):
     parser.add_argument("--plot", "-p", type=str, default="moment",
                         choices=["nup", "ndn", "n2", "moment"],
                         help="Observable to plot")
+    parser.add_argument("--save", "-s", type=str, default="",
+                        help="Filename to save plot")
     args = parser.parse_args(argv)
     argdict = dict(args.__dict__)
 
@@ -74,6 +76,7 @@ def parse_args(argv=None):
     hf = argdict.pop("hf")
     kwargs = dict()
     plot = argdict.pop("plot")
+    save = argdict.pop("save")
     processes = argdict.pop("processes")
     if processes == -1:
         processes = None
@@ -91,7 +94,7 @@ def parse_args(argv=None):
         elif "u" in kwargs and "eps" in kwargs:
             kwargs["mu"] = np.array(kwargs["u"]) / 2 - np.array(kwargs["eps"])
 
-    return p, kwargs, plot, processes
+    return p, kwargs, plot, save, processes
 
 
 def main():
@@ -110,7 +113,7 @@ def main():
     if len(args) == 0:
         argstr = "test.txt"
         args = argstr.split(" ")
-    p, kwargs, plot, max_workers = parse_args(args)
+    p, kwargs, plot, savepath, max_workers = parse_args(args)
 
     if kwargs:
         logger.setLevel(logging.WARNING)
@@ -126,6 +129,8 @@ def main():
         ax.plot(x, y)
         ax.set_xlabel(xlabel_aliases.get(xlabel, xlabel))
         ax.set_ylabel(ylabels.get(ylabel))
+        if savepath:
+            fig.savefig(savepath)
         plt.show()
     else:
         logger.setLevel(logging.DEBUG)
