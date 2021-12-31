@@ -13,11 +13,6 @@ import numpy as np
 from scipy import linalg as la
 from numba.extending import get_cython_function_address
 from numba import njit, float64, int64
-# Try to import Fortran implementation
-try:
-    from .src.timeflow import timeflow_map as _timeflow_map_f
-except ImportError:
-    _timeflow_map_f = None
 
 
 _dble = ctypes.POINTER(ctypes.c_double)
@@ -241,7 +236,7 @@ def matrix_product_sequence_beta0(mats, prod_len, shift):
     return prod_seq[::-1]
 
 
-def _timeflow_map(mats):
+def timeflow_map(mats):
     # Compute first QR decomposition with column pivoting
     q, jpvt, tau, work, info = la.lapack.dgeqp3(mats[0])
     # Extract diagonal elements of R (upper triangular matrix of Q)
@@ -303,12 +298,8 @@ def timeflow_map_0beta(matrices, prod_len, t):
     """
     # Pre-compute matrix product sequence
     mats = matrix_product_sequence_0beta(matrices, prod_len, t)
-    if _timeflow_map_f is not None:
-        # Call fortran implementation
-        q, d, t, tau, lwork, info = _timeflow_map_f(mats)
-        return q, d, t, tau, lwork
     # Call Scipy implementation
-    return _timeflow_map(mats)
+    return timeflow_map(mats)
 
 
 def timeflow_map_beta0(matrices, prod_len, t):
@@ -340,9 +331,5 @@ def timeflow_map_beta0(matrices, prod_len, t):
     """
     # Pre-compute matrix product sequence
     mats = matrix_product_sequence_beta0(matrices, prod_len, t)
-    if _timeflow_map_f is not None:
-        # Call fortran implementation
-        q, d, t, tau, lwork, info = _timeflow_map_f(mats)
-        return q, d, t, tau, lwork
     # Call Scipy implementation
-    return _timeflow_map(mats)
+    return timeflow_map(mats)
