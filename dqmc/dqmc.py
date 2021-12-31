@@ -385,71 +385,6 @@ def init_greens(bmats_up, bmats_dn, t, prod_len=0):
 # =========================================================================
 
 
-@njit(void(expk_t, float64, conf_t, bmat_t, bmat_t, int64, int64), **jkwargs)
-def update(exp_k, nu, config, bmats_up, bmats_dn, i, t):
-    r"""Updates the configuration and the corresponding time-step matrices.
-
-    Parameters
-    ----------
-    exp_k : np.ndarray
-        The matrix exponential of the kinetic hamiltonian.
-    nu : float
-        The parameter ν defined by :math:'\cosh(ν) = e^{U Δτ / 2}'
-    config : (N, L) np.ndarray
-        The configuration or Hubbard-Stratonovich field.
-    bmats_up : (L, N, N) np.ndarray
-        The spin-up time step matrices.
-    bmats_dn : (L, N, N) np.ndarray
-        The spin-down time step matrices.
-    i : int
-        The site index :math:'i' of the proposed spin-flip.
-    t : int
-        The time-step index :math:'t' of the proposed spin-flip.
-    """
-    config[i, t] = -config[i, t]
-    update_timestep_mats(exp_k, nu, config, bmats_up, bmats_dn, t)
-
-
-@njit(nt.UniTuple(float64, 2)(float64, conf_t, gmat_t, gmat_t, int64, int64), **jkwargs)
-def compute_determinants_fast(nu, config, gf_up, gf_dn, i, t):
-    r"""Computes the Metropolis acceptance via the fast update scheme.
-
-    Parameters
-    ----------
-    nu : float
-        The parameter ν defined by :math:'\cosh(ν) = e^{U Δτ / 2}'
-    config : (N, L) np.ndarray
-        The configuration or Hubbard-Stratonovich field.
-    gf_up : np.ndarray
-        The spin-up Green's function.
-    gf_dn : np.ndarray
-        The spin-down Green's function.
-    i : int
-        The site index :math:'i' of the proposed spin-flip.
-    t : int
-        The time-step index :math:'t' of the proposed spin-flip.
-    Returns
-    -------
-    d_up : float
-        The spin up determinant.
-    d_dn : float
-        The spin down determinant.
-
-    Notes
-    -----
-    AThe determinants are defined as:
-    ..math::
-        α_σ = e^{-2 σ ν s(i, t)} - 1
-        d_σ = 1 + (1 - G_{ii, σ}) α_σ
-    """
-    arg = -2 * nu * config[i, t]
-    alpha_up = np.expm1(UP * arg)
-    alpha_dn = np.expm1(DN * arg)
-    d_up = 1 + alpha_up * (1 - gf_up[i, i])
-    d_dn = 1 + alpha_dn * (1 - gf_dn[i, i])
-    return d_up, d_dn
-
-
 @njit(nt.float64(float64, conf_t, gmat_t, gmat_t, int64, int64), **jkwargs)
 def compute_acceptance_fast(nu, config, gf_up, gf_dn, i, t):
     r"""Computes the Metropolis acceptance via the fast update scheme.
@@ -684,86 +619,14 @@ def wrap_down_greens(bmats_up, bmats_dn, gf_up, gf_dn, t):
     gf_dn[:, :] = np.dot(np.dot(la.inv(b_dn), gf_dn), b_dn)
 
 
-@njit(int64(expk_t, float64, conf_t, bmat_t, bmat_t, gmat_t, gmat_t, int64[:], int64),
-      **jkwargs)
-def dqmc_iteration_jit(exp_k, nu, config, bmats_up, bmats_dn, gf_up, gf_dn, sgns,
-                       nwraps):
-    r"""Runs one iteration of the rank-1 DQMC-scheme.
-
-    Parameters
-    ----------
-    exp_k : np.ndarray
-        The matrix exponential of the kinetic hamiltonian.
-    nu : float
-        The parameter ν defined by :math:'\cosh(ν) = e^{U Δτ / 2}'.
-    config : (N, L) np.ndarray
-        The configuration or Hubbard-Stratonovich field.
-    bmats_up : (L, N, N) np.ndarray
-        The spin-up time step matrices.
-    bmats_dn : (L, N, N) np.ndarray
-        The spin-down time step matrices.
-    gf_up : (N, N) np.ndarray
-        The spin-up Green's function.
-    gf_dn : (N. N) np.ndarray
-        The spin-down Green's function.
-    sgns : (2, ) np.ndarray
-        ...
-    nwraps : int
-        Number of time slices after which the Green's functions are recomputed.
-
-    Returns
-    -------
-    accepted : int
-        The number of accepted spin flips.
-    """
-    accepted = 0
-    sites = np.arange(config.shape[0])
-    # Iterate over all time-steps
-    for t in range(config.shape[1]):
-        # Iterate over all lattice sites randomly
-        np.random.shuffle(sites)
-        for i in sites:
-            # Propose spin-flip in configuration
-            arg = -2 * nu * config[i, t]
-            alpha_up = np.expm1(UP * arg)
-            alpha_dn = np.expm1(DN * arg)
-            d_up = 1 + (1 - gf_up[i, i]) * alpha_up
-            d_dn = 1 + (1 - gf_dn[i, i]) * alpha_dn
-
-            # sign_up = d_up / abs(d_up)
-            # sign_dn = d_dn / abs(d_dn)
-            # print(sign_up, sign_dn)
-
-            # Check if move is accepted
-            if np.random.random() < abs(d_up * d_dn):
-                # Move accepted
-                accepted += 1
-                # Update Green's functions *before* updating configuration
-                update_greens_blas(nu, config, gf_up, gf_dn, i, t)
-                # Actually update configuration and B-matrices *after* GF update
-                config[i, t] = -config[i, t]
-
-        # Update time-step matrix of the current time slice before next time slice.
-        # Can be done outside the inner loop over the lattice sites since it only uses
-        # the i-th spin and i-th row/column of the Green's functions.
-        update_timestep_mats(exp_k, nu, config, bmats_up, bmats_dn, t)
-
-        # Recompute Green's function for next slice `t+1` after several time slices,
-        # otherwise wrap Green's functions up to next time slice.
-        tp1 = t + 1
-        if nwraps and tp1 % nwraps == 0:
-            compute_greens(bmats_up, bmats_dn, gf_up, gf_dn, sgns, tp1)
-        else:
-            wrap_up_greens(bmats_up, bmats_dn, gf_up, gf_dn, t)
-    return accepted
-
-
 @njit(int64(float64, conf_t, gmat_t, gmat_t, int64[::1], int64[::1], int64), **jkwargs)
 def dqmc_time_step(nu, config, gf_up, gf_dn, sgns, sites, t):
     """Accelerated inner loop of the DQMC iteration."""
     # Iterate over all lattice sites randomly
     accepted = 0
     np.random.shuffle(sites)
+    u_up = np.empty_like(gf_up[0])
+    u_dn = np.empty_like(gf_dn[0])
     for i in sites:
         # Propose spin-flip in configuration
         arg = -2 * nu * config[i, t]
@@ -771,12 +634,25 @@ def dqmc_time_step(nu, config, gf_up, gf_dn, sgns, sites, t):
         alpha_dn = np.expm1(DN * arg)
         d_up = 1 + (1 - gf_up[i, i]) * alpha_up
         d_dn = 1 + (1 - gf_dn[i, i]) * alpha_dn
+        # d_up, d_dn = compute_determinants_fast(nu, config, gf_up, gf_dn, i, t)
         # Check if move is accepted
         if np.random.random() < abs(d_up * d_dn):
             # Move accepted
             accepted += 1
             # Update Green's functions *before* updating configuration
-            update_greens_blas(nu, config, gf_up, gf_dn, i, t)
+            # update_greens_blas(nu, config, gf_up, gf_dn, i, t)
+
+            # Copy i-th column of (G-1) and store in u
+            u_up[:] = gf_up[:, i]
+            u_dn[:] = gf_dn[:, i]
+            u_up[i] -= 1.0
+            u_dn[i] -= 1.0
+            # Copy i-th row of G
+            w_up = gf_up[i, :]
+            w_dn = gf_dn[i, :]
+            # Perform rank 1 update of GF
+            blas_dger(alpha_up / (1.0 - alpha_up * u_up[i]), u_up, w_up, gf_up)
+            blas_dger(alpha_dn / (1.0 - alpha_dn * u_dn[i]), u_dn, w_dn, gf_dn)
             # Update signs
             if d_up < 0:
                 sgns[0] = -sgns[0]
