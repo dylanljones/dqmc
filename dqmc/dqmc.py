@@ -40,8 +40,6 @@ except ImportError:
     _fortran_available = False
 
 logger = logging.getLogger("dqmc")
-if _fortran_available:
-    print("dqmc:   Using Fortran")
 
 expk_t = float64[:, :]
 conf_t = int8[:, :]
@@ -491,22 +489,25 @@ def compute_acceptance_fast(nu, config, gf_up, gf_dn, i, t):
     return min(abs(d_up * d_dn), 1.0)
 
 
-@njit(void(float64, float64, gmat_t, gmat_t, int64), **jkwargs)
-def update_greens(alpha_up, alpha_dn, gf_up, gf_dn, i):
+@njit(void(float64, conf_t, gmat_t, gmat_t, int64, int64), **jkwargs)
+def update_greens(nu, config, gf_up, gf_dn, i, t):
     r"""Performs a Sherman-Morrison update of the Green's function.
 
     Parameters
     ----------
-    alpha_up : float
-        The parameter `α_↑` previously used for computing the acceptance ratio.
-    alpha_dn : float
-        The parameter `α_↓` previously used for computing the acceptance ratio.
+    nu : float
+        The parameter ν defined by :math:'\cosh(ν) = e^{U Δτ / 2}'
+    config : (N, L) np.ndarray
+        The configuration or Hubbard-Stratonovich field.
+    i : int
+        The site index :math:'i' of the proposed spin-flip.
+    t : int
+        The time-step index :math:'t' of the proposed spin-flip.
     gf_up : np.ndarray
         The spin-up Green's function.
     gf_dn : np.ndarray
         The spin-down Green's function.
-    i : int
-        The site index :math:'i' of the proposed spin-flip.
+
     Notes
     -----
     The update of the Green's function *before* flipping spin at site i and time t
@@ -524,8 +525,12 @@ def update_greens(alpha_up, alpha_dn, gf_up, gf_dn, i):
            of the Hubbard Model”, in Series in Contemporary Applied Mathematics,
            Vol. 12 (June 2009), p. 1.
     """
-    num_sites = gf_up.shape[0]
+    num_sites = config.shape[0]
 
+    # Compute alphas
+    arg = -2 * nu * config[i, t]
+    alpha_up = np.expm1(UP * arg)
+    alpha_dn = np.expm1(DN * arg)
     # Compute acceptance ratios
     d_up = 1 + alpha_up * (1 - gf_up[i, i])
     d_dn = 1 + alpha_dn * (1 - gf_dn[i, i])
@@ -545,22 +550,24 @@ def update_greens(alpha_up, alpha_dn, gf_up, gf_dn, i):
     gf_dn += frac_dn * tmp * gf_dn[i, :]
 
 
-@njit(void(float64, float64, gmat_t, gmat_t, int64), **jkwargs)
-def update_greens_blas(alpha_up, alpha_dn, gf_up, gf_dn, i):
+@njit(void(float64, conf_t, gmat_t, gmat_t, int64, int64), **jkwargs)
+def update_greens_blas(nu, config, gf_up, gf_dn, i, t):
     r"""Performs a Sherman-Morrison update of the Green's function.
 
     Parameters
     ----------
-    alpha_up : float
-        The parameter `α_↑` previously used for computing the acceptance ratio.
-    alpha_dn : float
-        The parameter `α_↓` previously used for computing the acceptance ratio.
+    nu : float
+        The parameter ν defined by :math:'\cosh(ν) = e^{U Δτ / 2}'
+    config : (N, L) np.ndarray
+        The configuration or Hubbard-Stratonovich field.
+    i : int
+        The site index :math:'i' of the proposed spin-flip.
+    t : int
+        The time-step index :math:'t' of the proposed spin-flip.
     gf_up : np.ndarray
         The spin-up Green's function.
     gf_dn : np.ndarray
         The spin-down Green's function.
-    i : int
-        The site index :math:'i' of the proposed spin-flip.
 
     Notes
     -----
@@ -579,6 +586,12 @@ def update_greens_blas(alpha_up, alpha_dn, gf_up, gf_dn, i):
            of the Hubbard Model”, in Series in Contemporary Applied Mathematics,
            Vol. 12 (June 2009), p. 1.
     """
+    # Compute alphas and determinants
+    arg = -2 * nu * config[i, t]
+    alpha_up = np.expm1(UP * arg)
+    alpha_dn = np.expm1(DN * arg)
+    # d_up = 1 + (1 - gf_up[i, i]) * alpha_up
+    # d_dn = 1 + (1 - gf_dn[i, i]) * alpha_dn
     # Copy i-th column of (G-1)
     u_up = np.copy(gf_up[:, i])
     u_dn = np.copy(gf_dn[:, i])
@@ -726,7 +739,7 @@ def dqmc_iteration_jit(exp_k, nu, config, bmats_up, bmats_dn, gf_up, gf_dn, sgns
                 # Move accepted
                 accepted += 1
                 # Update Green's functions *before* updating configuration
-                update_greens_blas(alpha_up, alpha_dn, gf_up, gf_dn, i)
+                update_greens_blas(nu, config, gf_up, gf_dn, i, t)
                 # Actually update configuration and B-matrices *after* GF update
                 config[i, t] = -config[i, t]
 
@@ -763,7 +776,7 @@ def dqmc_time_step(nu, config, gf_up, gf_dn, sgns, sites, t):
             # Move accepted
             accepted += 1
             # Update Green's functions *before* updating configuration
-            update_greens_blas(alpha_up, alpha_dn, gf_up, gf_dn, i)
+            update_greens_blas(nu, config, gf_up, gf_dn, i, t)
             # Update signs
             if d_up < 0:
                 sgns[0] = -sgns[0]
