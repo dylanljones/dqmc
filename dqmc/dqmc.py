@@ -30,15 +30,18 @@ from scipy.linalg import lapack
 from numba import njit, float64, int8, int64, void
 from numba import types as nt
 from .model import HubbardModel  # noqa: F401
-from .linalg import blas_dger, timeflow_map_0beta
-
+from .linalg import blas_dger, timeflow_map, matrix_product_sequence_0beta
 # Try to import Fortran implementation
 try:
-    from .src.greens import construct_greens as _construct_greens_f
+    from .src import construct_greens as _construct_greens_f
+    _fortran_available = True
 except ImportError:
     _construct_greens_f = None
+    _fortran_available = False
 
 logger = logging.getLogger("dqmc")
+if _fortran_available:
+    print("dqmc:   Using Fortran")
 
 expk_t = float64[:, :]
 conf_t = int8[:, :]
@@ -284,7 +287,7 @@ def compute_greens(bmats_up, bmats_dn, gf_up, gf_dn, sgns, t):
     sgns[1] = np.sign(np.linalg.det(gf_dn))
 
 
-def _construct_greens(tsm, gf, t, prod_len):
+def _construct_greens(tsm, gf):
     """Construct the Green's function (I + A)^{-1} with the imaginary-time flow map A.
 
     Parameters
@@ -293,10 +296,6 @@ def _construct_greens(tsm, gf, t, prod_len):
         The time step matrices for one spin channel.
     gf : (N, N) np.ndarray
         The output array for the Green's function.
-    t : int
-        The current time-step index :math:'t'.
-    prod_len : int
-        The number of matrices multiplied explicitly.
     Returns
     -------
     sign : int
@@ -308,7 +307,7 @@ def _construct_greens(tsm, gf, t, prod_len):
            of matrix multiplications”, in Linear Algebra Appl. 435, p. 659-673 (2011)
     """
     # Calculate imaginary time flow map
-    q, d, t, tau, lwork = timeflow_map_0beta(tsm, prod_len, t)
+    q, d, t, tau, lwork = timeflow_map(tsm)
 
     # Construct the matrix D_b^{-1}
     diagb = np.copy(d)
@@ -336,7 +335,7 @@ def _construct_greens(tsm, gf, t, prod_len):
     _gf, info = lapack.dgetrs(t_lu, jpvt, db_inv_qt)
     gf[:, :] = _gf
 
-    return sign
+    return sign, 0.
 
 
 def compute_greens_qrd(bmats_up, bmats_dn, gf_up, gf_dn, sgns, t, prod_len=1):
@@ -359,14 +358,15 @@ def compute_greens_qrd(bmats_up, bmats_dn, gf_up, gf_dn, sgns, t, prod_len=1):
     prod_len : int
         The number of matrices multiplied explicitly
     """
-    if _construct_greens_f is None:
-        sgns[0] = _construct_greens(bmats_up, gf_up, t, prod_len)
-        sgns[1] = _construct_greens(bmats_dn, gf_dn, t, prod_len)
+    logdet = [0, 0]
+    tsm_up = matrix_product_sequence_0beta(bmats_up, prod_len, t)
+    tsm_dn = matrix_product_sequence_0beta(bmats_dn, prod_len, t)
+    if _fortran_available:
+        sgns[0], logdet[0] = _construct_greens_f(tsm_up, gf_up)
+        sgns[1], logdet[1] = _construct_greens_f(tsm_dn, gf_dn)
     else:
-        q, d, tmat, tau, lwork = timeflow_map_0beta(bmats_up, prod_len, t)
-        gf_up[:, :], sgns[0], logdet_up = _construct_greens_f(q, d, tmat, tau, lwork)
-        q, d, tmat, tau, lwork = timeflow_map_0beta(bmats_dn, prod_len, t)
-        gf_dn[:, :], sgns[1], logdet_dn = _construct_greens_f(q, d, tmat, tau, lwork)
+        sgns[0], logdet[0] = _construct_greens(tsm_up, gf_up)
+        sgns[1], logdet[1] = _construct_greens(tsm_dn, gf_dn)
 
 
 def init_greens(bmats_up, bmats_dn, t, prod_len=0):
@@ -412,6 +412,46 @@ def update(exp_k, nu, config, bmats_up, bmats_dn, i, t):
     update_timestep_mats(exp_k, nu, config, bmats_up, bmats_dn, t)
 
 
+@njit(nt.UniTuple(float64, 2)(float64, conf_t, gmat_t, gmat_t, int64, int64), **jkwargs)
+def compute_determinants_fast(nu, config, gf_up, gf_dn, i, t):
+    r"""Computes the Metropolis acceptance via the fast update scheme.
+
+    Parameters
+    ----------
+    nu : float
+        The parameter ν defined by :math:'\cosh(ν) = e^{U Δτ / 2}'
+    config : (N, L) np.ndarray
+        The configuration or Hubbard-Stratonovich field.
+    gf_up : np.ndarray
+        The spin-up Green's function.
+    gf_dn : np.ndarray
+        The spin-down Green's function.
+    i : int
+        The site index :math:'i' of the proposed spin-flip.
+    t : int
+        The time-step index :math:'t' of the proposed spin-flip.
+    Returns
+    -------
+    d_up : float
+        The spin up determinant.
+    d_dn : float
+        The spin down determinant.
+
+    Notes
+    -----
+    AThe determinants are defined as:
+    ..math::
+        α_σ = e^{-2 σ ν s(i, t)} - 1
+        d_σ = 1 + (1 - G_{ii, σ}) α_σ
+    """
+    arg = -2 * nu * config[i, t]
+    alpha_up = np.expm1(UP * arg)
+    alpha_dn = np.expm1(DN * arg)
+    d_up = 1 + alpha_up * (1 - gf_up[i, i])
+    d_dn = 1 + alpha_dn * (1 - gf_dn[i, i])
+    return d_up, d_dn
+
+
 @njit(nt.float64(float64, conf_t, gmat_t, gmat_t, int64, int64), **jkwargs)
 def compute_acceptance_fast(nu, config, gf_up, gf_dn, i, t):
     r"""Computes the Metropolis acceptance via the fast update scheme.
@@ -451,25 +491,22 @@ def compute_acceptance_fast(nu, config, gf_up, gf_dn, i, t):
     return min(abs(d_up * d_dn), 1.0)
 
 
-@njit(void(float64, conf_t, gmat_t, gmat_t, int64, int64), **jkwargs)
-def update_greens(nu, config, gf_up, gf_dn, i, t):
+@njit(void(float64, float64, gmat_t, gmat_t, int64), **jkwargs)
+def update_greens(alpha_up, alpha_dn, gf_up, gf_dn, i):
     r"""Performs a Sherman-Morrison update of the Green's function.
 
     Parameters
     ----------
-    nu : float
-        The parameter ν defined by :math:'\cosh(ν) = e^{U Δτ / 2}'
-    config : (N, L) np.ndarray
-        The configuration or Hubbard-Stratonovich field.
-    i : int
-        The site index :math:'i' of the proposed spin-flip.
-    t : int
-        The time-step index :math:'t' of the proposed spin-flip.
+    alpha_up : float
+        The parameter `α_↑` previously used for computing the acceptance ratio.
+    alpha_dn : float
+        The parameter `α_↓` previously used for computing the acceptance ratio.
     gf_up : np.ndarray
         The spin-up Green's function.
     gf_dn : np.ndarray
         The spin-down Green's function.
-
+    i : int
+        The site index :math:'i' of the proposed spin-flip.
     Notes
     -----
     The update of the Green's function *before* flipping spin at site i and time t
@@ -487,12 +524,8 @@ def update_greens(nu, config, gf_up, gf_dn, i, t):
            of the Hubbard Model”, in Series in Contemporary Applied Mathematics,
            Vol. 12 (June 2009), p. 1.
     """
-    num_sites = config.shape[0]
+    num_sites = gf_up.shape[0]
 
-    # Compute alphas
-    arg = -2 * nu * config[i, t]
-    alpha_up = np.expm1(UP * arg)
-    alpha_dn = np.expm1(DN * arg)
     # Compute acceptance ratios
     d_up = 1 + alpha_up * (1 - gf_up[i, i])
     d_dn = 1 + alpha_dn * (1 - gf_dn[i, i])
@@ -512,24 +545,22 @@ def update_greens(nu, config, gf_up, gf_dn, i, t):
     gf_dn += frac_dn * tmp * gf_dn[i, :]
 
 
-@njit(void(float64, conf_t, gmat_t, gmat_t, int64, int64), **jkwargs)
-def update_greens_blas(nu, config, gf_up, gf_dn, i, t):
+@njit(void(float64, float64, gmat_t, gmat_t, int64), **jkwargs)
+def update_greens_blas(alpha_up, alpha_dn, gf_up, gf_dn, i):
     r"""Performs a Sherman-Morrison update of the Green's function.
 
     Parameters
     ----------
-    nu : float
-        The parameter ν defined by :math:'\cosh(ν) = e^{U Δτ / 2}'
-    config : (N, L) np.ndarray
-        The configuration or Hubbard-Stratonovich field.
-    i : int
-        The site index :math:'i' of the proposed spin-flip.
-    t : int
-        The time-step index :math:'t' of the proposed spin-flip.
+    alpha_up : float
+        The parameter `α_↑` previously used for computing the acceptance ratio.
+    alpha_dn : float
+        The parameter `α_↓` previously used for computing the acceptance ratio.
     gf_up : np.ndarray
         The spin-up Green's function.
     gf_dn : np.ndarray
         The spin-down Green's function.
+    i : int
+        The site index :math:'i' of the proposed spin-flip.
 
     Notes
     -----
@@ -548,12 +579,6 @@ def update_greens_blas(nu, config, gf_up, gf_dn, i, t):
            of the Hubbard Model”, in Series in Contemporary Applied Mathematics,
            Vol. 12 (June 2009), p. 1.
     """
-    # Compute alphas and determinants
-    arg = -2 * nu * config[i, t]
-    alpha_up = np.expm1(UP * arg)
-    alpha_dn = np.expm1(DN * arg)
-    # d_up = 1 + (1 - gf_up[i, i]) * alpha_up
-    # d_dn = 1 + (1 - gf_dn[i, i]) * alpha_dn
     # Copy i-th column of (G-1)
     u_up = np.copy(gf_up[:, i])
     u_dn = np.copy(gf_dn[:, i])
@@ -701,7 +726,7 @@ def dqmc_iteration_jit(exp_k, nu, config, bmats_up, bmats_dn, gf_up, gf_dn, sgns
                 # Move accepted
                 accepted += 1
                 # Update Green's functions *before* updating configuration
-                update_greens_blas(nu, config, gf_up, gf_dn, i, t)
+                update_greens_blas(alpha_up, alpha_dn, gf_up, gf_dn, i)
                 # Actually update configuration and B-matrices *after* GF update
                 config[i, t] = -config[i, t]
 
@@ -738,7 +763,7 @@ def dqmc_time_step(nu, config, gf_up, gf_dn, sgns, sites, t):
             # Move accepted
             accepted += 1
             # Update Green's functions *before* updating configuration
-            update_greens_blas(nu, config, gf_up, gf_dn, i, t)
+            update_greens_blas(alpha_up, alpha_dn, gf_up, gf_dn, i)
             # Update signs
             if d_up < 0:
                 sgns[0] = -sgns[0]
