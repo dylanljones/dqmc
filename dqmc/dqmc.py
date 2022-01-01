@@ -385,6 +385,31 @@ def init_greens(bmats_up, bmats_dn, t, prod_len=0):
 # =========================================================================
 
 
+@njit(void(expk_t, float64, conf_t, bmat_t, bmat_t, int64, int64), **jkwargs)
+def update(exp_k, nu, config, bmats_up, bmats_dn, i, t):
+    r"""Updates the configuration and the corresponding time-step matrices.
+
+    Parameters
+    ----------
+    exp_k : np.ndarray
+        The matrix exponential of the kinetic hamiltonian.
+    nu : float
+        The parameter ν defined by :math:'\cosh(ν) = e^{U Δτ / 2}'
+    config : (N, L) np.ndarray
+        The configuration or Hubbard-Stratonovich field.
+    bmats_up : (L, N, N) np.ndarray
+        The spin-up time step matrices.
+    bmats_dn : (L, N, N) np.ndarray
+        The spin-down time step matrices.
+    i : int
+        The site index :math:'i' of the proposed spin-flip.
+    t : int
+        The time-step index :math:'t' of the proposed spin-flip.
+    """
+    config[i, t] = -config[i, t]
+    update_timestep_mats(exp_k, nu, config, bmats_up, bmats_dn, t)
+
+
 @njit(nt.float64(float64, conf_t, gmat_t, gmat_t, int64, int64), **jkwargs)
 def compute_acceptance_fast(nu, config, gf_up, gf_dn, i, t):
     r"""Computes the Metropolis acceptance via the fast update scheme.
@@ -619,14 +644,13 @@ def wrap_down_greens(bmats_up, bmats_dn, gf_up, gf_dn, t):
     gf_dn[:, :] = np.dot(np.dot(la.inv(b_dn), gf_dn), b_dn)
 
 
-@njit(int64(float64, conf_t, gmat_t, gmat_t, int64[::1], int64[::1], int64), **jkwargs)
-def dqmc_time_step(nu, config, gf_up, gf_dn, sgns, sites, t):
+@njit(int64(expk_t, float64, conf_t, bmat_t, bmat_t, gmat_t, gmat_t,
+            int64[::1], int64[::1], int64), **jkwargs)
+def dqmc_time_step(exp_k, nu, config, bmats_up, bmats_dn, gf_up, gf_dn, sgns, sites, t):
     """Accelerated inner loop of the DQMC iteration."""
     # Iterate over all lattice sites randomly
     accepted = 0
     np.random.shuffle(sites)
-    u_up = np.empty_like(gf_up[0])
-    u_dn = np.empty_like(gf_dn[0])
     for i in sites:
         # Propose spin-flip in configuration
         arg = -2 * nu * config[i, t]
@@ -641,25 +665,22 @@ def dqmc_time_step(nu, config, gf_up, gf_dn, sgns, sites, t):
             accepted += 1
             # Update Green's functions *before* updating configuration
             # update_greens_blas(nu, config, gf_up, gf_dn, i, t)
+            update_greens(nu, config, gf_up, gf_dn, i, t)
 
-            # Copy i-th column of (G-1) and store in u
-            u_up[:] = gf_up[:, i]
-            u_dn[:] = gf_dn[:, i]
-            u_up[i] -= 1.0
-            u_dn[i] -= 1.0
-            # Copy i-th row of G
-            w_up = gf_up[i, :]
-            w_dn = gf_dn[i, :]
-            # Perform rank 1 update of GF
-            blas_dger(alpha_up / (1.0 - alpha_up * u_up[i]), u_up, w_up, gf_up)
-            blas_dger(alpha_dn / (1.0 - alpha_dn * u_dn[i]), u_dn, w_dn, gf_dn)
             # Update signs
             if d_up < 0:
                 sgns[0] = -sgns[0]
             if d_dn < 0:
                 sgns[1] = -sgns[1]
+
             # Actually update configuration and B-matrices *after* GF update
             config[i, t] = -config[i, t]
+            update_timestep_mats(exp_k, nu, config, bmats_up, bmats_dn, t)
+
+    # Update time-step matrix of the current time slice before next time slice.
+    # Can be done outside the inner loop over the lattice sites since it only uses
+    # the i-th spin and i-th row/column of the Green's functions.
+    # update_timestep_mats(exp_k, nu, config, bmats_up, bmats_dn, t)
 
     return accepted
 
@@ -705,12 +726,8 @@ def dqmc_iteration(exp_k, nu, config, bmats_up, bmats_dn, gf_up, gf_dn, sgns,
     # Iterate over all time-steps
     for t in range(config.shape[1]):
         # Iterate over all lattice sites and perform updates
-        accepted += dqmc_time_step(nu, config, gf_up, gf_dn, sgns, sites, t)
-
-        # Update time-step matrix of the current time slice before next time slice.
-        # Can be done outside the inner loop over the lattice sites since it only uses
-        # the i-th spin and i-th row/column of the Green's functions.
-        update_timestep_mats(exp_k, nu, config, bmats_up, bmats_dn, t)
+        accepted += dqmc_time_step(exp_k, nu, config, bmats_up, bmats_dn,
+                                   gf_up, gf_dn, sgns, sites, t)
 
         # Recompute Green's function for next slice `t+1` after several time slices,
         # otherwise wrap Green's functions up to next time slice.
