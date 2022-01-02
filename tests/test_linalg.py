@@ -26,11 +26,11 @@ mat = hnp.arrays(np.float64,
 
 mat_arr = hnp.arrays(np.float64,
                      st.tuples(
-                        st.integers(10, 20),
+                        st.integers(10, 40),
                         st.shared(st.integers(2, 10), key="n"),
                         st.shared(st.integers(2, 10), key="n"),
                      ),
-                     elements=st.floats(-1e10, +1e10))
+                     elements=st.floats(-1e5, +1e5))
 
 
 @given(st.floats(-1.0, +1.0), xarr, yarr, aarr)
@@ -65,7 +65,7 @@ def test_dger_numpy(alpha, x, y, a):
 def test_mdot(matrices):
     expected = reduce(np.dot, matrices)
     result = linalg.mdot(matrices)
-    assert_allclose(result, expected)
+    assert_allclose(result, expected, rtol=1e-10)
 
 
 @given(mat)
@@ -90,25 +90,25 @@ def test_matrix_product_sequence_0beta(mats, prod_len, shift):
     indices = np.arange(num_mats)[::-1]
     indices = np.roll(indices, shift)
     expected = linalg.mdot(mats[indices])
-
+    mats = np.ascontiguousarray(mats)
     prod_seq = linalg.matrix_product_sequence_0beta(mats, prod_len, shift)
-    result = linalg.mdot(prod_seq[::-1])
+    result = reduce(np.dot, prod_seq[::-1])
 
-    assert_allclose(result, expected)
+    assert_allclose(result, expected, atol=1e-20)
 
 
-@given(mat_arr, st.integers(1, 10), st.shared(st.integers(0, 10)))
+@given(mat_arr, st.integers(1, 16), st.shared(st.integers(0, 10)))
 def test_matrix_product_sequence_beta0(mats, prod_len, shift):
     num_mats = len(mats)
     assume(num_mats % prod_len == 0)
     assume(np.all(np.isfinite(mats)))
     assume(shift < num_mats)
-
+    mats = np.ascontiguousarray(mats)
     indices = np.arange(num_mats)
     indices = np.roll(indices, -shift)
     expected = linalg.mdot(mats[indices])
 
     prod_seq = linalg.matrix_product_sequence_beta0(mats, prod_len, shift)
-    result = linalg.mdot(prod_seq[::-1])
+    result = reduce(np.dot, prod_seq[::-1])
 
-    assert_allclose(result, expected)
+    assert_allclose(result, expected, atol=1e-20)

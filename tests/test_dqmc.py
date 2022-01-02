@@ -15,7 +15,7 @@ from numpy.testing import assert_array_equal, assert_array_almost_equal, assert_
 from hypothesis import given, settings, assume, strategies as st
 from dqmc import dqmc, hubbard_hypercube
 
-settings.register_profile("dqmc", deadline=50000, max_examples=100)
+settings.register_profile("dqmc", deadline=50000, max_examples=200, print_blob=True)
 settings.load_profile("dqmc")
 
 st_u = st.floats(0.1, 10)
@@ -34,6 +34,20 @@ def _init(num_sites, num_timesteps, u, mu, beta, eps=0.0, periodic=True):
     exp_k, nu, config = dqmc.init_qmc(model, num_timesteps, 0)
     bmats_up, bmats_dn = dqmc.compute_timestep_mats(exp_k, nu, config)
     return exp_k, nu, config, bmats_up, bmats_dn
+
+
+def _greens(bmats_up, bmats_dn, t, prod_len=0):
+    try:
+        return dqmc.init_greens(bmats_up, bmats_dn, t, prod_len)
+    except la.LinAlgError:
+        assume(False)
+    gf = np.zeros(bmats_up.shape[0], dtype=np.float64)
+    return gf, np.copy(gf), 0., 0.
+
+
+def assert_gf_equal(actual, desired, rtol=1e-5, atol=0.):
+    assert_allclose(actual, desired, rtol=rtol, atol=atol)
+    # assert_array_almost_equal(actual, desired, decimal=5)
 
 
 def test_init_qmc_atomic():
@@ -63,7 +77,6 @@ def test_init_qmc_zerot():
 
 @given(st_u, st_mu, st_beta, st_nsites, st_ntimes, st_t)
 def test_compute_timestep_mat(u, mu, beta, num_sites, num_times, t):
-    # num_sites, num_times = 10, 200
     eps, hop = 0.0, 1.0
     assume(t < num_times)
     assume(u * hop * (beta / num_times)**2 < 0.1)
@@ -140,7 +153,7 @@ def test_compute_acceptance_fast(u, beta, num_sites, num_times, i, t):
     assume(t < num_times)
     exp_k, nu, config, bmats_up, bmats_dn = _init(num_sites, num_times, u, mu, beta)
 
-    gf_up, gf_dn, sgns, logdet = dqmc.init_greens(bmats_up, bmats_dn, t)
+    gf_up, gf_dn, sgns, logdet = _greens(bmats_up, bmats_dn, t)
     # gf_up, gf_dn = dqmc.compute_greens(bmats_up, bmats_dn, t)
     # Compute fast acceptance *before* spin flip
     d = dqmc.compute_acceptance_fast(nu, config, gf_up, gf_dn, i, t)
@@ -165,7 +178,7 @@ def test_compute_greens():
     pass
 
 
-@given(st_u, st_beta, st_nsites, st_ntimes, st_t, st.integers(1, 20))
+@given(st_u, st_beta, st_nsites, st_ntimes, st_t, st.integers(2, 20))
 def test_compute_greens_stable(u, beta, num_sites, num_times, t, prod_len):
     mu = u/2
     assume(num_times % prod_len == 0)
@@ -173,15 +186,15 @@ def test_compute_greens_stable(u, beta, num_sites, num_times, t, prod_len):
     exp_k, nu, config, bmats_up, bmats_dn = _init(num_sites, num_times, u, mu, beta)
 
     # Compute Green's function of time slice `t`
-    gf_up_ref, gf_dn_ref, sgn_ref, det_ref = dqmc.init_greens(bmats_up, bmats_dn, t)
+    gf_up_ref, gf_dn_ref, sgn_ref, det_ref = _greens(bmats_up, bmats_dn, t)
 
     # Compute stable Green's function of time slice `t`
-    gf_up, gf_dn, sgn, det = dqmc.init_greens(bmats_up, bmats_dn, t, prod_len)
+    gf_up, gf_dn, sgn, det = _greens(bmats_up, bmats_dn, t, prod_len)
 
-    assert_allclose(gf_up, gf_up_ref, rtol=1e-6, atol=10)
-    assert_allclose(gf_dn, gf_dn_ref, rtol=1e-6, atol=10)
+    assert_gf_equal(gf_up, gf_up_ref)
+    assert_gf_equal(gf_dn, gf_dn_ref)
     assert_array_equal(sgn_ref, sgn)
-    assert_allclose(det_ref, det)
+    assert_array_almost_equal(det_ref, det)
 
 
 @given(st_u, st_beta, st_nsites, st_ntimes, st_i)
@@ -191,7 +204,7 @@ def test_update_greens(u, beta, num_sites, num_times, i):
     exp_k, nu, config, bmats_up, bmats_dn = _init(num_sites, num_times, u, mu, beta)
 
     t = 0  # Only use first time slice to prevent need for wrapping
-    gf_up, gf_dn, _, _ = dqmc.init_greens(bmats_up, bmats_dn, t)
+    gf_up, gf_dn, _, _ = _greens(bmats_up, bmats_dn, t)
 
     # Update Green's function
     dqmc.update_greens(nu, config, gf_up, gf_dn, i, t)
@@ -199,8 +212,8 @@ def test_update_greens(u, beta, num_sites, num_times, i):
     dqmc.update(exp_k, nu, config, bmats_up, bmats_dn, i, t)
     gf_up_ref, gf_dn_ref, _, _ = dqmc.init_greens(bmats_up, bmats_dn, t)
 
-    assert_array_almost_equal(gf_up, gf_up_ref, decimal=8)
-    assert_array_almost_equal(gf_dn, gf_dn_ref, decimal=8)
+    assert_gf_equal(gf_up, gf_up_ref)
+    assert_gf_equal(gf_dn, gf_dn_ref)
 
 
 @given(st_u, st_beta, st_nsites, st_ntimes, st_i)
@@ -210,15 +223,15 @@ def test_update_greens_blas(u, beta, num_sites, num_times, i):
     exp_k, nu, config, bmats_up, bmats_dn = _init(num_sites, num_times, u, mu, beta)
 
     t = 0  # Only use first time slice to prevent need for wrapping
-    gf_up, gf_dn, _, _ = dqmc.init_greens(bmats_up, bmats_dn, t)
+    gf_up, gf_dn, _, _ = _greens(bmats_up, bmats_dn, t)
     # Update Green's function
     dqmc.update_greens_blas(nu, config, gf_up, gf_dn, i, t)
     # Update configuration and B-matrices and compute Greens function
     dqmc.update(exp_k, nu, config, bmats_up, bmats_dn, i, t)
-    gf_up_ref, gf_dn_ref, _, _ = dqmc.init_greens(bmats_up, bmats_dn, t)
+    gf_up_ref, gf_dn_ref, _, _ = _greens(bmats_up, bmats_dn, t)
 
-    assert_array_almost_equal(gf_up, gf_up_ref, decimal=8)
-    assert_array_almost_equal(gf_dn, gf_dn_ref, decimal=8)
+    assert_gf_equal(gf_up, gf_up_ref)
+    assert_gf_equal(gf_dn, gf_dn_ref)
 
 
 @given(st_u, st_beta, st_nsites, st_ntimes, st_t)
@@ -228,34 +241,30 @@ def test_wrap_up_greens(u, beta, num_sites, num_times, t):
     exp_k, nu, config, bmats_up, bmats_dn = _init(num_sites, num_times, u, mu, beta)
 
     # Compute Green's function of time slice `t`
-    try:
-        gf_up, gf_dn, _, _ = dqmc.init_greens(bmats_up, bmats_dn, t)
-    except la.LinAlgError:
-        assume(False)
-        return
+    gf_up, gf_dn, _, _ = _greens(bmats_up, bmats_dn, t)
     # Wrap Greens function to next time slice `t+1`
     dqmc.wrap_up_greens(bmats_up, bmats_dn, gf_up, gf_dn, t)
     # Re-compute Green's function for next time slice `t+1`
-    gf_up_ref, gf_dn_ref, _, _ = dqmc.init_greens(bmats_up, bmats_dn, t+1)
+    gf_up_ref, gf_dn_ref, _, _ = _greens(bmats_up, bmats_dn, t+1)
 
-    assert_array_almost_equal(gf_up_ref, gf_up, decimal=5)
-    assert_array_almost_equal(gf_dn_ref, gf_dn, decimal=5)
+    assert_gf_equal(gf_up, gf_up_ref, rtol=5e-4)
+    assert_gf_equal(gf_dn, gf_dn_ref, rtol=5e-4)
 
 
 @given(st_u, st_beta, st_nsites, st_ntimes, st_t)
 def test_wrap_down_greens(u, beta, num_sites, num_times, t):
     mu = u/2
-    assume(t < num_times)
+    assume(0 < t < num_times)
     exp_k, nu, config, bmats_up, bmats_dn = _init(num_sites, num_times, u, mu, beta)
 
     # Compute Green's function of time slice `t`
-    gf_up, gf_dn, _, _ = dqmc.init_greens(bmats_up, bmats_dn, t)
+    gf_up, gf_dn, _, _ = _greens(bmats_up, bmats_dn, t)
 
     # Wrap Greens function to next time slice `t+1`
     dqmc.wrap_down_greens(bmats_up, bmats_dn, gf_up, gf_dn, t)
 
     # Re-compute Green's function for next time slice `t+1`
-    gf_up_ref, gf_dn_ref, _, _ = dqmc.init_greens(bmats_up, bmats_dn, t-1)
+    gf_up_ref, gf_dn_ref, _, _ = _greens(bmats_up, bmats_dn, t-1)
 
-    assert_array_almost_equal(gf_up_ref, gf_up, decimal=5)
-    assert_array_almost_equal(gf_dn_ref, gf_dn, decimal=5)
+    assert_allclose(gf_up, gf_up_ref, rtol=0, atol=1e-3)
+    assert_allclose(gf_dn, gf_dn_ref, rtol=0, atol=1e-3)

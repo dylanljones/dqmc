@@ -5,7 +5,7 @@
 # Copyright (c) 2021, Dylan Jones
 
 import numpy as np
-from numpy.testing import assert_array_equal, assert_array_almost_equal
+from numpy.testing import assert_array_equal
 from hypothesis import given, strategies as st
 from dqmc import hubbard_hypercube
 

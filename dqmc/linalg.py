@@ -167,7 +167,7 @@ def matrix_product_sequence_0beta(mats, prod_len, shift):
     indices = np.arange(num_mats)[::-1]
     indices = np.roll(indices, shift)
     if prod_len == 1:
-        return mats[indices]
+        return mats[indices[::-1]]
 
     prod_seq = np.zeros((num_seqs, n, m), dtype=np.float64)
     for i in range(num_seqs):
@@ -222,7 +222,7 @@ def matrix_product_sequence_beta0(mats, prod_len, shift):
     indices = np.arange(num_mats)
     indices = np.roll(indices, -shift)
     if prod_len == 1:
-        return mats[indices]
+        return mats[indices[::-1]]
 
     prod_seq = np.zeros((num_seqs, n, m), dtype=np.float64)
     for i in range(num_seqs):
