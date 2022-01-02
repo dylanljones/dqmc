@@ -7,10 +7,12 @@
 import numpy as np
 from scipy import linalg as la
 from numpy.testing import assert_allclose
-from hypothesis import given, assume, strategies as st
+from hypothesis import given, assume, settings, strategies as st
 import hypothesis.extra.numpy as hnp
 from dqmc import linalg
 from functools import reduce
+
+settings.load_profile("dqmc")
 
 
 xarr = hnp.arrays(np.float64, 10, elements=st.floats(-10., 10))

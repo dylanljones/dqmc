@@ -5,9 +5,11 @@
 # Copyright (c) 2021, Dylan Jones
 
 import numpy as np
-from numpy.testing import assert_array_equal
-from hypothesis import given, strategies as st
+from numpy.testing import assert_equal
+from hypothesis import given, settings, strategies as st
 from dqmc import hubbard_hypercube
+
+settings.load_profile("dqmc")
 
 
 def tb_hamiltonian_chain(num_sites, eps, mu, hop, periodic=True):
@@ -42,7 +44,7 @@ def test_tb_hamiltonian_1d(num_sites, eps, mu, hop, periodic):
     model = hubbard_hypercube(num_sites, eps=eps, mu=mu, hop=hop, periodic=periodic)
     ham = model.hamiltonian_kinetic()
     expected = tb_hamiltonian_chain(num_sites, eps, mu, hop, periodic)
-    assert_array_equal(expected, ham)
+    assert_equal(expected, ham)
 
 
 @given(st.integers(5, 10),
@@ -55,4 +57,4 @@ def test_tb_hamiltonian_square(num_sites, eps, mu, hop, periodic):
     model = hubbard_hypercube(shape, eps=eps, mu=mu, hop=hop, periodic=periodic)
     ham = model.hamiltonian_kinetic()
     expected = tb_hamiltonian_square(num_sites, eps, mu, hop, periodic)
-    assert_array_equal(expected, ham)
+    assert_equal(expected, ham)
