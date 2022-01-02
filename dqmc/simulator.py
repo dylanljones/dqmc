@@ -164,10 +164,12 @@ class DQMC:
         self.acceptance_probs = list()
 
         # Initialization
-        gf_up, gf_dn, sgns = init_greens(self.bmats_up, self.bmats_dn, 0, self.prod_len)
+        gf_up, gf_dn, sgndet, logdet = init_greens(self.bmats_up, self.bmats_dn,
+                                                   0, self.prod_len)
         self._gf_up = gf_up
         self._gf_dn = gf_dn
-        self._sgns = sgns
+        self._sgndet = sgndet
+        self._logdet = logdet
 
         # Measurement data
         # ----------------
@@ -184,7 +186,8 @@ class DQMC:
                 self.bmats_dn,
                 self._gf_up,
                 self._gf_dn,
-                self._sgns,
+                self._sgndet,
+                self._logdet,
                 t
             )
         else:
@@ -193,7 +196,8 @@ class DQMC:
                 self.bmats_dn,
                 self._gf_up,
                 self._gf_dn,
-                self._sgns,
+                self._sgndet,
+                self._logdet,
                 t,
                 self.prod_len
             )
@@ -210,7 +214,8 @@ class DQMC:
             self.bmats_dn,
             self._gf_up,
             self._gf_dn,
-            self._sgns,
+            self._sgndet,
+            self._logdet,
             self.num_recomp,
             self.prod_len
         )
@@ -218,7 +223,7 @@ class DQMC:
         acc_ratio = accepted / self.config.size
         self.acceptance_probs.append(acc_ratio)
         logger.debug("[%s] %3d Ratio: %.2f  Signs: (%+d %+d)",
-                     self.status, self.it, acc_ratio, self._sgns[0], self._sgns[1])
+                     self.status, self.it, acc_ratio, self._sgndet[0], self._sgndet[1])
 
     def accumulate_measurements(self, num_measurements):
         if self.sampl_recomp:
@@ -229,7 +234,7 @@ class DQMC:
         accumulate_measurements(
             self._gf_up,
             self._gf_dn,
-            self._sgns,
+            self._sgndet,
             self.n_up,
             self.n_dn,
             self.n_double,
@@ -279,7 +284,8 @@ class DQMC:
 
         t = time.perf_counter() - t0
         logger.info("%s iterations completed!", total_sweeps)
-        logger.info("Signs: %s", self._sgns)
+        logger.info("    Signs: [     %+d       %+d]", self._sgndet[0], self._sgndet[1])
+        logger.info(" Log Dets: [%6.2f  %6.2f]", self._logdet[0], self._logdet[1])
         logger.info("Equil CPU time: %6.1fs  (%.4f s/it)", t_equil, t_equil / num_equil)
         logger.info("Sampl CPU time: %6.1fs  (%.4f s/it)", t_sampl, t_sampl / num_sampl)
         logger.info("Total CPU time: %6.1fs  (%.4f s/it)", t, t / total_sweeps)

@@ -30,7 +30,8 @@ from scipy.linalg import lapack
 from numba import njit, float64, int8, int64, void
 from numba import types as nt
 from .model import HubbardModel  # noqa: F401
-from .linalg import blas_dger, timeflow_map, matrix_product_sequence_0beta
+from .linalg import timeflow_map, matrix_product_sequence_0beta
+from .linalg import numpy_dger as dger
 # Try to import Fortran implementation
 try:
     from .src import construct_greens as _construct_greens_f
@@ -39,6 +40,7 @@ except ImportError:
     _construct_greens_f = None
     _fortran_available = False
 
+_finfo = True
 logger = logging.getLogger("dqmc")
 
 expk_t = float64[:, :]
@@ -259,8 +261,8 @@ def compute_m_matrices(bmats_up, bmats_dn, t):
     return m_up, m_dn
 
 
-@njit((bmat_t, bmat_t, gmat_t, gmat_t, int64[:], int64), **jkwargs)
-def compute_greens(bmats_up, bmats_dn, gf_up, gf_dn, sgns, t):
+@njit((bmat_t, bmat_t, gmat_t, gmat_t, int64[:], float64[:], int64), **jkwargs)
+def compute_greens(bmats_up, bmats_dn, gf_up, gf_dn, sgndet, logdet, t):
     r"""Computes the Green's functions for both spins.
 
     Parameters
@@ -273,16 +275,20 @@ def compute_greens(bmats_up, bmats_dn, gf_up, gf_dn, sgns, t):
         Output array for the spin-up Green's function.
     gf_dn : (N, N) np.ndarray
         Output array for the spin-down Green's function.
-    sgns : (2, ) np.ndarray
-        The signs of the deterinants.
+    sgndet : (2, ) np.ndarray
+        The signs of the determinants of the Green's functions.
+    logdet : (2, ) np.ndarray
+        The logarithm of the determinants of the Green's functions.
     t : int
         The current time-step index :math:'t'.
     """
     m_up, m_dn = compute_m_matrices(bmats_up, bmats_dn, t)
     gf_up[:, :] = np.linalg.inv(m_up)
     gf_dn[:, :] = np.linalg.inv(m_dn)
-    sgns[0] = np.sign(np.linalg.det(gf_up))
-    sgns[1] = np.sign(np.linalg.det(gf_dn))
+    sgndet[0] = np.sign(np.linalg.det(gf_up))
+    sgndet[1] = np.sign(np.linalg.det(gf_dn))
+    logdet[0] = np.log(np.abs(np.linalg.det(gf_up)))
+    logdet[1] = np.log(np.abs(np.linalg.det(gf_dn)))
 
 
 def _construct_greens(tsm, gf):
@@ -332,11 +338,11 @@ def _construct_greens(tsm, gf):
     # matrix A using the LU factorization computed by DGETRF.
     _gf, info = lapack.dgetrs(t_lu, jpvt, db_inv_qt)
     gf[:, :] = _gf
+    logdet = np.log(np.abs(np.linalg.det(gf)))
+    return sign, logdet
 
-    return sign, 0.
 
-
-def compute_greens_qrd(bmats_up, bmats_dn, gf_up, gf_dn, sgns, t, prod_len=1):
+def compute_greens_qrd(bmats_up, bmats_dn, gf_up, gf_dn, sgndet, logdet, t, prod_len=1):
     r"""Computes the Green's functions for both spins via ASvQRD stabilization.
 
     Parameters
@@ -349,35 +355,42 @@ def compute_greens_qrd(bmats_up, bmats_dn, gf_up, gf_dn, sgns, t, prod_len=1):
         Output array for the spin-up Green's function.
     gf_dn : np.ndarray
         Output array for the spin-down Green's function.
-    sgns : (2, ) np.ndarray
+    sgndet : (2, ) np.ndarray
         The signs of the determinants of the Green's functions.
+    logdet : (2, ) np.ndarray
+        The logarithm of the determinants of the Green's functions.
     t : int
         The current time-step index :math:'t'.
     prod_len : int
         The number of matrices multiplied explicitly
     """
-    logdet = [0, 0]
+    global _finfo
     tsm_up = matrix_product_sequence_0beta(bmats_up, prod_len, t)
     tsm_dn = matrix_product_sequence_0beta(bmats_dn, prod_len, t)
     if _fortran_available:
-        sgns[0], logdet[0] = _construct_greens_f(tsm_up, gf_up)
-        sgns[1], logdet[1] = _construct_greens_f(tsm_dn, gf_dn)
+        if _finfo:
+            logger.debug("Using Fortran subroutines")
+            _finfo = False
+        sgndet[0], logdet[0] = _construct_greens_f(tsm_up, gf_up)
+        sgndet[1], logdet[1] = _construct_greens_f(tsm_dn, gf_dn)
     else:
-        sgns[0], logdet[0] = _construct_greens(tsm_up, gf_up)
-        sgns[1], logdet[1] = _construct_greens(tsm_dn, gf_dn)
+        sgndet[0], logdet[0] = _construct_greens(tsm_up, gf_up)
+        sgndet[1], logdet[1] = _construct_greens(tsm_dn, gf_dn)
 
 
 def init_greens(bmats_up, bmats_dn, t, prod_len=0):
     num_sites = bmats_up[0].shape[0]
     shape = (num_sites, num_sites)
-    sgns = np.zeros(2, dtype=np.int64)
+    sgndet = np.zeros(2, dtype=np.int64)
+    logdet = np.zeros(2, dtype=np.float64)
     gf_up = np.ascontiguousarray(np.zeros(shape, dtype=np.float64))
     gf_dn = np.ascontiguousarray(np.zeros(shape, dtype=np.float64))
     if prod_len > 0:
-        compute_greens_qrd(bmats_up, bmats_dn, gf_up, gf_dn, sgns, t, prod_len)
+        compute_greens_qrd(bmats_up, bmats_dn, gf_up, gf_dn, sgndet, logdet, t,
+                           prod_len)
     else:
-        compute_greens(bmats_up, bmats_dn, gf_up, gf_dn, sgns, t)
-    return gf_up, gf_dn, sgns
+        compute_greens(bmats_up, bmats_dn, gf_up, gf_dn, sgndet, logdet, t)
+    return gf_up, gf_dn, sgndet, logdet
 
 
 # =========================================================================
@@ -494,20 +507,16 @@ def update_greens(nu, config, gf_up, gf_dn, i, t):
     # Compute acceptance ratios
     d_up = 1 + alpha_up * (1 - gf_up[i, i])
     d_dn = 1 + alpha_dn * (1 - gf_dn[i, i])
-    # Compute fractions
-    frac_up = alpha_up / d_up
-    frac_dn = alpha_dn / d_dn
-
-    # Compute update to Green's functions
-    idel = np.zeros(num_sites)
-    idel[i] = 1.
-
+    # Temporary array vor (G-I) e_i
     tmp = np.zeros((num_sites, 1))
-    tmp[:, 0] = gf_up[:, i] - idel
-    gf_up += frac_up * tmp * gf_up[i, :]
-
-    tmp[:, 0] = gf_dn[:, i] - idel
-    gf_dn += frac_dn * tmp * gf_dn[i, :]
+    # Update spin up Green's function
+    tmp[:, 0] = gf_up[:, i]
+    tmp[i, 0] -= 1
+    gf_up += (alpha_up / d_up) * tmp * gf_up[i, :]
+    # Update spin down Green's function
+    tmp[:, 0] = gf_dn[:, i]
+    tmp[i, 0] -= 1
+    gf_dn += (alpha_dn / d_dn) * tmp * gf_dn[i, :]
 
 
 @njit(void(float64, conf_t, gmat_t, gmat_t, int64, int64), **jkwargs)
@@ -561,8 +570,8 @@ def update_greens_blas(nu, config, gf_up, gf_dn, i, t):
     w_up = gf_up[i, :]
     w_dn = gf_dn[i, :]
     # Perform rank 1 update of GF
-    blas_dger(alpha_up / (1.0 - alpha_up * u_up[i]), u_up, w_up, gf_up)
-    blas_dger(alpha_dn / (1.0 - alpha_dn * u_dn[i]), u_dn, w_dn, gf_dn)
+    dger(alpha_up / (1.0 - alpha_up * u_up[i]), u_up, w_up, gf_up)
+    dger(alpha_dn / (1.0 - alpha_dn * u_dn[i]), u_dn, w_dn, gf_dn)
 
 
 @njit(void(bmat_t, bmat_t, gmat_t, gmat_t, int64), **jkwargs)
@@ -645,11 +654,13 @@ def wrap_down_greens(bmats_up, bmats_dn, gf_up, gf_dn, t):
 
 
 @njit(int64(expk_t, float64, conf_t, bmat_t, bmat_t, gmat_t, gmat_t,
-            int64[::1], int64[::1], int64), **jkwargs)
-def dqmc_time_step(exp_k, nu, config, bmats_up, bmats_dn, gf_up, gf_dn, sgns, sites, t):
+            int64[::1], float64[:], int64[::1], int64), **jkwargs)
+def dqmc_time_step(exp_k, nu, config, bmats_up, bmats_dn, gf_up, gf_dn, sgndet, logdet,
+                   sites, t):
     """Accelerated inner loop of the DQMC iteration."""
     # Iterate over all lattice sites randomly
     accepted = 0
+    # tmp = np.zeros((config.shape[0], 1), dtype=np.float64)
     np.random.shuffle(sites)
     for i in sites:
         # Propose spin-flip in configuration
@@ -669,10 +680,12 @@ def dqmc_time_step(exp_k, nu, config, bmats_up, bmats_dn, gf_up, gf_dn, sgns, si
 
             # Update signs
             if d_up < 0:
-                sgns[0] = -sgns[0]
+                sgndet[0] = -sgndet[0]
             if d_dn < 0:
-                sgns[1] = -sgns[1]
-
+                sgndet[1] = -sgndet[1]
+            # Update determinants
+            logdet[0] -= np.log(np.abs(d_up))
+            logdet[1] -= np.log(np.abs(d_dn))
             # Actually update configuration and B-matrices *after* GF update
             config[i, t] = -config[i, t]
             update_timestep_mats(exp_k, nu, config, bmats_up, bmats_dn, t)
@@ -685,7 +698,7 @@ def dqmc_time_step(exp_k, nu, config, bmats_up, bmats_dn, gf_up, gf_dn, sgns, si
     return accepted
 
 
-def dqmc_iteration(exp_k, nu, config, bmats_up, bmats_dn, gf_up, gf_dn, sgns,
+def dqmc_iteration(exp_k, nu, config, bmats_up, bmats_dn, gf_up, gf_dn, sgndet, logdet,
                    nwraps, nprod):
     r"""Runs one iteration of the rank-1 DQMC-scheme.
 
@@ -705,8 +718,10 @@ def dqmc_iteration(exp_k, nu, config, bmats_up, bmats_dn, gf_up, gf_dn, sgns,
         The spin-up Green's function.
     gf_dn : (N. N) np.ndarray
         The spin-down Green's function.
-    sgns : (2, ) np.ndarray
-        The spin-up and spin-down signs of the determinants.
+    sgndet : (2, ) np.ndarray
+        The signs of the determinants of the Green's functions.
+    logdet : (2, ) np.ndarray
+        The logarithm of the determinants of the Green's functions.
     nwraps : int, optional
         Number of time slices after which the Green's functions are recomputed.
         Must be a multiple of the number of imaginary time steps!  If a `0` is passed
@@ -727,16 +742,17 @@ def dqmc_iteration(exp_k, nu, config, bmats_up, bmats_dn, gf_up, gf_dn, sgns,
     for t in range(config.shape[1]):
         # Iterate over all lattice sites and perform updates
         accepted += dqmc_time_step(exp_k, nu, config, bmats_up, bmats_dn,
-                                   gf_up, gf_dn, sgns, sites, t)
+                                   gf_up, gf_dn, sgndet, logdet, sites, t)
 
         # Recompute Green's function for next slice `t+1` after several time slices,
         # otherwise wrap Green's functions up to next time slice.
         tp1 = t + 1
         if nwraps and tp1 % nwraps == 0:
             if nprod > 0:
-                compute_greens_qrd(bmats_up, bmats_dn, gf_up, gf_dn, sgns, tp1, nprod)
+                compute_greens_qrd(bmats_up, bmats_dn, gf_up, gf_dn, sgndet, logdet,
+                                   tp1, nprod)
             else:
-                compute_greens(bmats_up, bmats_dn, gf_up, gf_dn, sgns, tp1)
+                compute_greens(bmats_up, bmats_dn, gf_up, gf_dn, sgndet, logdet, tp1)
         else:
             wrap_up_greens(bmats_up, bmats_dn, gf_up, gf_dn, t)
 
