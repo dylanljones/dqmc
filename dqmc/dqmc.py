@@ -498,8 +498,6 @@ def update_greens(nu, config, gf_up, gf_dn, i, t):
            of the Hubbard Model”, in Series in Contemporary Applied Mathematics,
            Vol. 12 (June 2009), p. 1.
     """
-    num_sites = config.shape[0]
-
     # Compute alphas
     arg = -2 * nu * config[i, t]
     alpha_up = np.expm1(UP * arg)
@@ -508,7 +506,7 @@ def update_greens(nu, config, gf_up, gf_dn, i, t):
     d_up = 1 + alpha_up * (1 - gf_up[i, i])
     d_dn = 1 + alpha_dn * (1 - gf_dn[i, i])
     # Temporary array vor (G-I) e_i
-    tmp = np.zeros((num_sites, 1))
+    tmp = np.zeros((config.shape[0], 1), dtype=np.float64)
     # Update spin up Green's function
     tmp[:, 0] = gf_up[:, i]
     tmp[i, 0] -= 1
@@ -559,19 +557,16 @@ def update_greens_blas(nu, config, gf_up, gf_dn, i, t):
     arg = -2 * nu * config[i, t]
     alpha_up = np.expm1(UP * arg)
     alpha_dn = np.expm1(DN * arg)
-    # d_up = 1 + (1 - gf_up[i, i]) * alpha_up
-    # d_dn = 1 + (1 - gf_dn[i, i]) * alpha_dn
-    # Copy i-th column of (G-1)
-    u_up = np.copy(gf_up[:, i])
-    u_dn = np.copy(gf_dn[:, i])
-    u_up[i] -= 1.0
-    u_dn[i] -= 1.0
-    # Copy i-th row of G
-    w_up = gf_up[i, :]
-    w_dn = gf_dn[i, :]
-    # Perform rank 1 update of GF
-    dger(alpha_up / (1.0 - alpha_up * u_up[i]), u_up, w_up, gf_up)
-    dger(alpha_dn / (1.0 - alpha_dn * u_dn[i]), u_dn, w_dn, gf_dn)
+    # Temporary array vor (G-I) e_i
+    tmp = np.zeros(config.shape[0], dtype=np.float64)
+    # Update spin up Green's function
+    tmp[:] = gf_up[:, i]
+    tmp[i] -= 1.0
+    dger(alpha_up / (1.0 - alpha_up * tmp[i]), tmp, gf_up[i, :], gf_up)
+    # Update spin down Green's function
+    tmp[:] = gf_dn[:, i]
+    tmp[i] -= 1.0
+    dger(alpha_dn / (1.0 - alpha_dn * tmp[i]), tmp, gf_dn[i, :], gf_dn)
 
 
 @njit(void(bmat_t, bmat_t, gmat_t, gmat_t, int64), **jkwargs)
@@ -660,7 +655,6 @@ def dqmc_time_step(exp_k, nu, config, bmats_up, bmats_dn, gf_up, gf_dn, sgndet, 
     """Accelerated inner loop of the DQMC iteration."""
     # Iterate over all lattice sites randomly
     accepted = 0
-    # tmp = np.zeros((config.shape[0], 1), dtype=np.float64)
     np.random.shuffle(sites)
     for i in sites:
         # Propose spin-flip in configuration
@@ -669,15 +663,12 @@ def dqmc_time_step(exp_k, nu, config, bmats_up, bmats_dn, gf_up, gf_dn, sgndet, 
         alpha_dn = np.expm1(DN * arg)
         d_up = 1 + (1 - gf_up[i, i]) * alpha_up
         d_dn = 1 + (1 - gf_dn[i, i]) * alpha_dn
-        # d_up, d_dn = compute_determinants_fast(nu, config, gf_up, gf_dn, i, t)
         # Check if move is accepted
         if np.random.random() < abs(d_up * d_dn):
             # Move accepted
             accepted += 1
             # Update Green's functions *before* updating configuration
-            # update_greens_blas(nu, config, gf_up, gf_dn, i, t)
             update_greens(nu, config, gf_up, gf_dn, i, t)
-
             # Update signs
             if d_up < 0:
                 sgndet[0] = -sgndet[0]
@@ -688,12 +679,12 @@ def dqmc_time_step(exp_k, nu, config, bmats_up, bmats_dn, gf_up, gf_dn, sgndet, 
             logdet[1] -= np.log(np.abs(d_dn))
             # Actually update configuration and B-matrices *after* GF update
             config[i, t] = -config[i, t]
-            update_timestep_mats(exp_k, nu, config, bmats_up, bmats_dn, t)
+            # update_timestep_mats(exp_k, nu, config, bmats_up, bmats_dn, t)
 
     # Update time-step matrix of the current time slice before next time slice.
     # Can be done outside the inner loop over the lattice sites since it only uses
     # the i-th spin and i-th row/column of the Green's functions.
-    # update_timestep_mats(exp_k, nu, config, bmats_up, bmats_dn, t)
+    update_timestep_mats(exp_k, nu, config, bmats_up, bmats_dn, t)
 
     return accepted
 

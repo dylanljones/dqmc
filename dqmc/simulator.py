@@ -225,7 +225,7 @@ class DQMC:
         logger.debug("[%s] %3d Ratio: %.2f  Signs: (%+d %+d)",
                      self.status, self.it, acc_ratio, self._sgndet[0], self._sgndet[1])
 
-    def accumulate_measurements(self, num_measurements):
+    def accumulate_measurements(self):
         if self.sampl_recomp:
             # Recompute Green's functions before measurements
             self.compute_greens()
@@ -254,7 +254,7 @@ class DQMC:
         for sweep in range(sweeps):
             self.iteration()
             # perform measurements
-            self.accumulate_measurements(sweeps)
+            self.accumulate_measurements()
             # user measurement callback
             if callback is not None:
                 gf_up, gf_dn = self.get_greens()
@@ -284,8 +284,8 @@ class DQMC:
 
         t = time.perf_counter() - t0
         logger.info("%s iterations completed!", total_sweeps)
-        logger.info("    Signs: [     %+d       %+d]", self._sgndet[0], self._sgndet[1])
-        logger.info(" Log Dets: [%6.2f  %6.2f]", self._logdet[0], self._logdet[1])
+        logger.info("    Signs: [%+d  %+d]", self._sgndet[0], self._sgndet[1])
+        logger.info(" Log Dets: [%.2f  %.2f]", self._logdet[0], self._logdet[1])
         logger.info("Equil CPU time: %6.1fs  (%.4f s/it)", t_equil, t_equil / num_equil)
         logger.info("Sampl CPU time: %6.1fs  (%.4f s/it)", t_sampl, t_sampl / num_sampl)
         logger.info("Total CPU time: %6.1fs  (%.4f s/it)", t, t / total_sweeps)
