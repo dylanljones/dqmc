@@ -86,8 +86,10 @@ def init_qmc(model, num_timesteps, seed):
         A seed to be set before creating the cinfiguration.
     Returns
     -------
-    exp_k : np.ndarray
+    expk : np.ndarray
         The matrix exponential of the kinetic Hamiltonian of the model.
+    expk_inv : np.ndarray
+        The inverse matrix exponential of the kinetic Hamiltonian of the model.
     nu : float
         The parameter ν defined by :math:'\cosh(ν) = e^{U Δτ / 2}'.
     config : (N, L) np.ndarray
@@ -113,9 +115,10 @@ def init_qmc(model, num_timesteps, seed):
     nu = math.acosh(math.exp(model.u * dtau / 2.0)) if model.u else 0
     logger.debug("nu=%s", nu)
 
-    exp_k = expm(dtau * ham_k)
-    logger.debug("min(e^k)=%s", np.min(exp_k))
-    logger.debug("max(e^k)=%s", np.max(exp_k))
+    expk = expm(dtau * ham_k)
+    expk_inv = la.inv(expk)
+    logger.debug("min(e^k)=%s", np.min(expk))
+    logger.debug("max(e^k)=%s", np.max(expk))
 
     # Initialize configuration with random -1 and +1
     config = init_configuration(model.num_sites, num_timesteps)
@@ -123,7 +126,7 @@ def init_qmc(model, num_timesteps, seed):
     prop_neg = len(np.where(config == -1)[0]) / config.size
     logger.debug("config: p+=%s p-=%s", prop_pos, prop_neg)
 
-    return exp_k, nu, config
+    return expk, expk_inv, nu, config
 
 
 # =========================================================================
@@ -132,12 +135,12 @@ def init_qmc(model, num_timesteps, seed):
 
 
 @njit(float64[:, ::1](expk_t, float64, conf_t, int64, int64), **jkwargs)
-def compute_timestep_mat(exp_k, nu, config, t, sigma):
+def compute_timestep_mat(expk, nu, config, t, sigma):
     r"""Computes the time step matrix :math:'B_σ(h_t)'.
 
     Parameters
     ----------
-    exp_k : (N, N) np.ndarray
+    expk : (N, N) np.ndarray
         The matrix exponential of the kinetic hamiltonian.
     nu : float
         The parameter ν defined by :math:'\cosh(ν) = e^{U Δτ / 2}'
@@ -158,16 +161,47 @@ def compute_timestep_mat(exp_k, nu, config, t, sigma):
     ..math::
         B_σ(h_t) = e^k e^{σ ν V_t(h_t)}
     """
-    return exp_k * np.exp(sigma * nu * config[:, t])
+    return expk * np.exp(sigma * nu * config[:, t])
+
+
+@njit(float64[:, ::1](expk_t, float64, conf_t, int64, int64), **jkwargs)
+def compute_timestep_mat_inv(expk_inv, nu, config, t, sigma):
+    r"""Computes the inverse time step matrix :math:'B_σ(h_t)^{-1}'.
+
+    Parameters
+    ----------
+    expk_inv : (N, N) np.ndarray
+        The inverse matrix exponential of the kinetic hamiltonian.
+    nu : float
+        The parameter ν defined by :math:'\cosh(ν) = e^{U Δτ / 2}'
+    config : (N, L) np.ndarray
+        The configuration or Hubbard-Stratonovich field.
+    t : int
+        The index of the time step.
+    sigma : int
+        The spin σ (-1 or +1).
+    Returns
+    -------
+    b_inv : (N, N) np.ndarray
+        The matrix :math:'B_{t, σ}(h_t)^{-1}'.
+
+    Notes
+    -----
+    The inverse time step matrix :math:'B_σ(h_t)^{-1}' can be computed scaling the
+    inverse matrix exponential of the kinetic hamiltonian:
+    ..math::
+        B_σ(h_t)^{-1} = [e^k e^{σ ν V_t(h_t)}]^{-1} = [e^k]^{-1} e^{-σ ν V_t(h_t)}
+    """
+    return expk_inv * np.exp(-sigma * nu * config[:, t])[:, np.newaxis]
 
 
 @njit(nt.UniTuple(bmat_t, 2)(expk_t, float64, conf_t), **jkwargs)
-def compute_timestep_mats(exp_k, nu, config):
+def compute_timestep_mats(expk, nu, config):
     r"""Computes the time step matrices :math:'B_σ(h_t)' for all times and both spins.
 
     Parameters
     ----------
-    exp_k : (N, N) np.ndarray
+    expk : (N, N) np.ndarray
         The matrix exponential of the kinetic hamiltonian.
     nu : float
         The parameter ν defined by :math:'\cosh(ν) = e^{U Δτ / 2}'
@@ -180,6 +214,10 @@ def compute_timestep_mats(exp_k, nu, config):
     bmats_dn : (L, N, N) np.ndarray
         The spin-down time step matrices.
 
+    See Also
+    --------
+    compute_timestep_mat : Computation of the individual time step matrices.
+
     Notes
     -----
     The time step matrix :math:'B_σ(h_t)' is defined as
@@ -190,18 +228,50 @@ def compute_timestep_mats(exp_k, nu, config):
     bmats_up = np.zeros((num_timesteps, num_sites, num_sites), dtype=np.float64)
     bmats_dn = np.zeros((num_timesteps, num_sites, num_sites), dtype=np.float64)
     for t in range(num_timesteps):
-        bmats_up[t] = compute_timestep_mat(exp_k, nu, config, t, sigma=UP)
-        bmats_dn[t] = compute_timestep_mat(exp_k, nu, config, t, sigma=DN)
+        bmats_up[t] = compute_timestep_mat(expk, nu, config, t, sigma=UP)
+        bmats_dn[t] = compute_timestep_mat(expk, nu, config, t, sigma=DN)
     return np.ascontiguousarray(bmats_up), np.ascontiguousarray(bmats_dn)
 
 
-@njit(void(expk_t, float64, conf_t, bmat_t, bmat_t, int64), **jkwargs)
-def update_timestep_mats(exp_k, nu, config, bmats_up, bmats_dn, t):
-    r"""Updates one time step matrices :math:'B_σ(h_t)' for one time step.
+@njit(nt.UniTuple(bmat_t, 2)(expk_t, float64, conf_t), **jkwargs)
+def compute_timestep_mats_inv(expk_inv, nu, config):
+    r"""Computes the inverse of the time step matrices :math:'B_σ(h_t)^{-1}'.
 
-    Parametersc
+    Parameters
     ----------
-    exp_k : (N, N) np.ndarray
+    expk_inv : (N, N) np.ndarray
+        The inverse matrix exponential of the kinetic hamiltonian.
+    nu : float
+        The parameter ν defined by :math:'\cosh(ν) = e^{U Δτ / 2}'
+    config : (N, L) np.ndarray
+        The configuration or Hubbard-Stratonovich field.
+    Returns
+    -------
+    bmats_inv_up : (L, N, N) np.ndarray
+        The inverse spin-up time step matrices.
+    bmats_inv_dn : (L, N, N) np.ndarray
+        The inverse spin-down time step matrices.
+
+    See Also
+    --------
+    compute_timestep_mat_inv : Computation of the individual inverse time step matrices.
+    """
+    num_sites, num_timesteps = config.shape
+    bmats_inv_up = np.zeros((num_timesteps, num_sites, num_sites), dtype=np.float64)
+    bmats_inv_dn = np.zeros((num_timesteps, num_sites, num_sites), dtype=np.float64)
+    for t in range(num_timesteps):
+        bmats_inv_up[t] = compute_timestep_mat_inv(expk_inv, nu, config, t, sigma=UP)
+        bmats_inv_dn[t] = compute_timestep_mat_inv(expk_inv, nu, config, t, sigma=DN)
+    return np.ascontiguousarray(bmats_inv_up), np.ascontiguousarray(bmats_inv_dn)
+
+
+@njit(void(expk_t, float64, conf_t, bmat_t, bmat_t, int64), **jkwargs)
+def update_timestep_mats(expk, nu, config, bmats_up, bmats_dn, t):
+    r"""Updates a time step matrices :math:'B_σ(h_t)' for one time step.
+
+    Parameters
+    ----------
+    expk : (N, N) np.ndarray
         The matrix exponential of the kinetic hamiltonian.
     nu : float
         The parameter ν defined by :math:'\cosh(ν) = e^{U Δτ / 2}'
@@ -214,8 +284,31 @@ def update_timestep_mats(exp_k, nu, config, bmats_up, bmats_dn, t):
     t : int
         The index of the time step matrix to update.
     """
-    bmats_up[t] = compute_timestep_mat(exp_k, nu, config, t, sigma=UP)
-    bmats_dn[t] = compute_timestep_mat(exp_k, nu, config, t, sigma=DN)
+    bmats_up[t] = compute_timestep_mat(expk, nu, config, t, sigma=UP)
+    bmats_dn[t] = compute_timestep_mat(expk, nu, config, t, sigma=DN)
+
+
+@njit(void(expk_t, float64, conf_t, bmat_t, bmat_t, int64), **jkwargs)
+def update_timestep_mats_inv(expk_inv, nu, config, bmats_up_inv, bmats_dn_inv, t):
+    r"""Updates a inverse time step matrices :math:'B_σ(h_t)^{-1}' for one time step.
+
+    Parameters
+    ----------
+    expk_inv : (N, N) np.ndarray
+        The inverse matrix exponential of the kinetic hamiltonian.
+    nu : float
+        The parameter ν defined by :math:'\cosh(ν) = e^{U Δτ / 2}'
+    config : (N, L) np.ndarray
+        The configuration or Hubbard-Stratonovich field.
+    bmats_up_inv : (L, N, N) np.ndarray
+        The inverse spin-up time step matrices.
+    bmats_dn_inv : (L, N, N) np.ndarray
+        The inverse spin-down time step matrices.
+    t : int
+        The index of the time step matrix to update.
+    """
+    bmats_up_inv[t] = compute_timestep_mat_inv(expk_inv, nu, config, t, sigma=UP)
+    bmats_dn_inv[t] = compute_timestep_mat_inv(expk_inv, nu, config, t, sigma=DN)
 
 
 # =========================================================================
@@ -399,12 +492,12 @@ def init_greens(bmats_up, bmats_dn, t, prod_len=0):
 
 
 @njit(void(expk_t, float64, conf_t, bmat_t, bmat_t, int64, int64), **jkwargs)
-def update(exp_k, nu, config, bmats_up, bmats_dn, i, t):
+def update(expk, nu, config, bmats_up, bmats_dn, i, t):
     r"""Updates the configuration and the corresponding time-step matrices.
 
     Parameters
     ----------
-    exp_k : np.ndarray
+    expk : np.ndarray
         The matrix exponential of the kinetic hamiltonian.
     nu : float
         The parameter ν defined by :math:'\cosh(ν) = e^{U Δτ / 2}'
@@ -420,7 +513,7 @@ def update(exp_k, nu, config, bmats_up, bmats_dn, i, t):
         The time-step index :math:'t' of the proposed spin-flip.
     """
     config[i, t] = -config[i, t]
-    update_timestep_mats(exp_k, nu, config, bmats_up, bmats_dn, t)
+    update_timestep_mats(expk, nu, config, bmats_up, bmats_dn, t)
 
 
 @njit(nt.float64(float64, conf_t, gmat_t, gmat_t, int64, int64), **jkwargs)
@@ -650,7 +743,7 @@ def wrap_down_greens(bmats_up, bmats_dn, gf_up, gf_dn, t):
 
 @njit(int64(expk_t, float64, conf_t, bmat_t, bmat_t, gmat_t, gmat_t,
             int64[::1], float64[:], int64[::1], int64), **jkwargs)
-def dqmc_time_step(exp_k, nu, config, bmats_up, bmats_dn, gf_up, gf_dn, sgndet, logdet,
+def dqmc_time_step(expk, nu, config, bmats_up, bmats_dn, gf_up, gf_dn, sgndet, logdet,
                    sites, t):
     """Accelerated inner loop of the DQMC iteration."""
     # Iterate over all lattice sites randomly
@@ -679,23 +772,23 @@ def dqmc_time_step(exp_k, nu, config, bmats_up, bmats_dn, gf_up, gf_dn, sgndet, 
             logdet[1] -= np.log(np.abs(d_dn))
             # Actually update configuration and B-matrices *after* GF update
             config[i, t] = -config[i, t]
-            # update_timestep_mats(exp_k, nu, config, bmats_up, bmats_dn, t)
+            # update_timestep_mats(expk, nu, config, bmats_up, bmats_dn, t)
 
     # Update time-step matrix of the current time slice before next time slice.
     # Can be done outside the inner loop over the lattice sites since it only uses
     # the i-th spin and i-th row/column of the Green's functions.
-    update_timestep_mats(exp_k, nu, config, bmats_up, bmats_dn, t)
+    update_timestep_mats(expk, nu, config, bmats_up, bmats_dn, t)
 
     return accepted
 
 
-def dqmc_iteration(exp_k, nu, config, bmats_up, bmats_dn, gf_up, gf_dn, sgndet, logdet,
+def dqmc_iteration(expk, nu, config, bmats_up, bmats_dn, gf_up, gf_dn, sgndet, logdet,
                    nwraps, nprod):
     r"""Runs one iteration of the rank-1 DQMC-scheme.
 
     Parameters
     ----------
-    exp_k : np.ndarray
+    expk : np.ndarray
         The matrix exponential of the kinetic hamiltonian.
     nu : float
         The parameter ν defined by :math:'\cosh(ν) = e^{U Δτ / 2}'.
@@ -732,7 +825,7 @@ def dqmc_iteration(exp_k, nu, config, bmats_up, bmats_dn, gf_up, gf_dn, sgndet, 
     # Iterate over all time-steps
     for t in range(config.shape[1]):
         # Iterate over all lattice sites and perform updates
-        accepted += dqmc_time_step(exp_k, nu, config, bmats_up, bmats_dn,
+        accepted += dqmc_time_step(expk, nu, config, bmats_up, bmats_dn,
                                    gf_up, gf_dn, sgndet, logdet, sites, t)
 
         # Recompute Green's function for next slice `t+1` after several time slices,

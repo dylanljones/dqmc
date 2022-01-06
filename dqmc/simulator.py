@@ -151,11 +151,12 @@ class DQMC:
 
         self.model = model
         # Init QMC variables
-        self.exp_k, self.nu, self.config = init_qmc(model, num_timesteps, seed)
+        self.expk, self.expk_inv, self.nu, self.config = init_qmc(model, num_timesteps,
+                                                                  seed)
 
         # Pre-compute time flow matrices
         self.bmats_up, self.bmats_dn = compute_timestep_mats(
-            self.exp_k, self.nu, self.config
+            self.expk, self.nu, self.config
         )
 
         # Initialize QMC statistics
@@ -207,7 +208,7 @@ class DQMC:
 
     def iteration(self):
         accepted = dqmc_iteration(
-            self.exp_k,
+            self.expk,
             self.nu,
             self.config,
             self.bmats_up,
