@@ -31,9 +31,9 @@ def _init(num_sites, num_timesteps, u, mu, beta, eps=0.0, periodic=True):
     hop = 1.0
     assume(u * hop * (beta / num_timesteps)**2 < 0.1)
     model = hubbard_hypercube(num_sites, u, eps, hop, mu, beta, periodic=periodic)
-    exp_k, nu, config = dqmc.init_qmc(model, num_timesteps, 0)
-    bmats_up, bmats_dn = dqmc.compute_timestep_mats(exp_k, nu, config)
-    return exp_k, nu, config, bmats_up, bmats_dn
+    expk, _, nu, config = dqmc.init_qmc(model, num_timesteps, 0)
+    bmats_up, bmats_dn = dqmc.compute_timestep_mats(expk, nu, config)
+    return expk, nu, config, bmats_up, bmats_dn
 
 
 def _greens(bmats_up, bmats_dn, t, prod_len=0):
@@ -51,26 +51,26 @@ def assert_gf_equal(actual, desired, rtol=1e-8, atol=1e-5):
 
 def test_init_qmc_atomic():
     model = hubbard_hypercube(5, u=1, hop=0., beta=1.0)
-    exp_k, nu, config = dqmc.init_qmc(model, 100, 0)
-    assert_equal(np.eye(model.num_sites), exp_k)
+    expk, _, nu, config = dqmc.init_qmc(model, 100, 0)
+    assert_equal(np.eye(model.num_sites), expk)
     assert abs(nu - 0.1) < 1e-3
 
 
 def test_init_qmc_noninter():
     model = hubbard_hypercube(5, u=0, hop=1., beta=1.0)
-    exp_k, nu, config = dqmc.init_qmc(model, 100, 0)
+    expk, _, nu, config = dqmc.init_qmc(model, 100, 0)
 
     expected = np.eye(model.num_sites)
     np.fill_diagonal(expected[1:, :], -0.01)
     np.fill_diagonal(expected[:, 1:], -0.01)
-    assert_allclose(expected, exp_k, atol=1e-3)
+    assert_allclose(expected, expk, atol=1e-3)
     assert nu == 0
 
 
 def test_init_qmc_zerot():
     model = hubbard_hypercube(5, u=1, hop=1., beta=0.0)
-    exp_k, nu, config = dqmc.init_qmc(model, 100, 0)
-    assert_equal(np.eye(model.num_sites), exp_k)
+    expk, _, nu, config = dqmc.init_qmc(model, 100, 0)
+    assert_equal(np.eye(model.num_sites), expk)
     assert nu == 0
 
 
@@ -80,33 +80,33 @@ def test_compute_timestep_mat(u, mu, beta, num_sites, num_times, t):
     assume(t < num_times)
     assume(u * hop * (beta / num_times)**2 < 0.1)
     model = hubbard_hypercube(num_sites, u, eps, hop, mu, beta, periodic=True)
-    exp_k, nu, config = dqmc.init_qmc(model, num_times, 0)
+    expk, _, nu, config = dqmc.init_qmc(model, num_times, 0)
 
     # Spin up
     sigma = +1
     diag = sigma * nu * config[:, t]
-    expected = np.dot(exp_k, la.expm(np.diag(diag)))
-    result = dqmc.compute_timestep_mat(exp_k, nu, config, t, sigma)
+    expected = np.dot(expk, la.expm(np.diag(diag)))
+    result = dqmc.compute_timestep_mat(expk, nu, config, t, sigma)
     assert_allclose(expected, result, rtol=1e-8)
 
     # Spin down
     sigma = -1
     diag = sigma * nu * config[:, t]
-    expected = np.dot(exp_k, la.expm(np.diag(diag)))
-    result = dqmc.compute_timestep_mat(exp_k, nu, config, t, sigma)
+    expected = np.dot(expk, la.expm(np.diag(diag)))
+    result = dqmc.compute_timestep_mat(expk, nu, config, t, sigma)
     assert_allclose(expected, result, rtol=1e-8)
 
 
 @given(st_u, st_mu, st_beta, st_nsites, st_ntimes)
 def test_compute_timestep_mats(u, mu, beta, num_sites, num_times):
-    exp_k, nu, config, bmats_up, bmats_dn = _init(num_sites, num_times, u, mu, beta)
+    expk, nu, config, bmats_up, bmats_dn = _init(num_sites, num_times, u, mu, beta)
 
     # Check order of B-matrices
     t1 = num_times - 1
-    first_up = dqmc.compute_timestep_mat(exp_k, nu, config, t=0, sigma=+1)
-    first_dn = dqmc.compute_timestep_mat(exp_k, nu, config, t=0, sigma=-1)
-    last_up = dqmc.compute_timestep_mat(exp_k, nu, config, t=t1, sigma=+1)
-    last_dn = dqmc.compute_timestep_mat(exp_k, nu, config, t=t1, sigma=-1)
+    first_up = dqmc.compute_timestep_mat(expk, nu, config, t=0, sigma=+1)
+    first_dn = dqmc.compute_timestep_mat(expk, nu, config, t=0, sigma=-1)
+    last_up = dqmc.compute_timestep_mat(expk, nu, config, t=t1, sigma=+1)
+    last_dn = dqmc.compute_timestep_mat(expk, nu, config, t=t1, sigma=-1)
     assert_equal(last_up, bmats_up[-1])
     assert_equal(last_dn, bmats_dn[-1])
     assert_equal(first_up, bmats_up[0])
@@ -116,12 +116,12 @@ def test_compute_timestep_mats(u, mu, beta, num_sites, num_times):
 @given(st_u, st_mu, st_beta, st_nsites, st_ntimes, st_i, st_t)
 def test_update_timestep_mats(u, mu, beta, num_sites, num_times, i, t):
     assume((i < num_sites) and (t < num_times))
-    exp_k, nu, config, bmats_up, bmats_dn = _init(num_sites, num_times, u, mu, beta)
+    expk, nu, config, bmats_up, bmats_dn = _init(num_sites, num_times, u, mu, beta)
     config[i, t] = -config[i, t]
 
-    bmat_up = dqmc.compute_timestep_mat(exp_k, nu, config, t, +1)
-    bmat_dn = dqmc.compute_timestep_mat(exp_k, nu, config, t, -1)
-    dqmc.update_timestep_mats(exp_k, nu, config, bmats_up, bmats_dn, t)
+    bmat_up = dqmc.compute_timestep_mat(expk, nu, config, t, +1)
+    bmat_dn = dqmc.compute_timestep_mat(expk, nu, config, t, -1)
+    dqmc.update_timestep_mats(expk, nu, config, bmats_up, bmats_dn, t)
 
     assert_equal(bmat_up, bmats_up[t])
     assert_equal(bmat_dn, bmats_dn[t])
@@ -130,12 +130,12 @@ def test_update_timestep_mats(u, mu, beta, num_sites, num_times, i, t):
 @given(st_u, st_mu, st_beta, st_nsites, st_ntimes, st_i, st_t)
 def test_update(u, mu, beta, num_sites, num_times, i, t):
     assume((i < num_sites) and (t < num_times))
-    exp_k, nu, config, bmats_up, bmats_dn = _init(num_sites, num_times, u, mu, beta)
+    expk, nu, config, bmats_up, bmats_dn = _init(num_sites, num_times, u, mu, beta)
 
     old_spin = config[i, t]
-    dqmc.update(exp_k, nu, config, bmats_up, bmats_dn, i, t)
+    dqmc.update(expk, nu, config, bmats_up, bmats_dn, i, t)
 
-    bmats_up_new, bmats_dn_new = dqmc.compute_timestep_mats(exp_k, nu, config)
+    bmats_up_new, bmats_dn_new = dqmc.compute_timestep_mats(expk, nu, config)
 
     assert config[i, t] == -old_spin
     assert_equal(bmats_up_new, bmats_up)
@@ -147,7 +147,7 @@ def test_compute_acceptance_fast(u, mu, beta, num_sites, num_times, i, t):
     prod_len = 2
     assume((i < num_sites) and (t < num_times))
     assume(num_times % prod_len == 0)
-    exp_k, nu, config, bmats_up, bmats_dn = _init(num_sites, num_times, u, mu, beta)
+    expk, nu, config, bmats_up, bmats_dn = _init(num_sites, num_times, u, mu, beta)
     gf_up, gf_dn, sgns, logdet = _greens(bmats_up, bmats_dn, t, prod_len)
 
     # Compute fast acceptance *before* spin flip
@@ -161,7 +161,7 @@ def test_compute_acceptance_fast(u, mu, beta, num_sites, num_times, i, t):
         assume(False)
     old_det = abs(det_up * det_dn)
     # Flip spin
-    dqmc.update(exp_k, nu, config, bmats_up, bmats_dn, i, t)
+    dqmc.update(expk, nu, config, bmats_up, bmats_dn, i, t)
     # Compute acceptance ratio
     m_up, m_dn = dqmc.compute_m_matrices(bmats_up, bmats_dn, t)
     try:
@@ -193,7 +193,7 @@ def _max_diff(actual, desired):
 def test_compute_greens_stable(u, mu, beta, num_sites, num_times, t, prod_len):
     assume(num_times % prod_len == 0)
     assume(t < num_times)
-    exp_k, nu, config, bmats_up, bmats_dn = _init(num_sites, num_times, u, mu, beta)
+    expk, nu, config, bmats_up, bmats_dn = _init(num_sites, num_times, u, mu, beta)
 
     # Compute Green's function of time slice `t`
     gf_up_ref, gf_dn_ref, sgn_ref, det_ref = _greens(bmats_up, bmats_dn, t)
@@ -212,13 +212,13 @@ def test_update_greens(u, mu, beta, num_sites, num_times, i, t):
     prod_len = 2
     assume((i < num_sites) and (t < num_times))
     assume(num_times % prod_len == 0)
-    exp_k, nu, config, bmats_up, bmats_dn = _init(num_sites, num_times, u, mu, beta)
+    expk, nu, config, bmats_up, bmats_dn = _init(num_sites, num_times, u, mu, beta)
     gf_up, gf_dn, _, _ = _greens(bmats_up, bmats_dn, t, prod_len)
 
     # Update Green's function
     dqmc.update_greens(nu, config, gf_up, gf_dn, i, t)
     # Update configuration and B-matrices and compute Greens function
-    dqmc.update(exp_k, nu, config, bmats_up, bmats_dn, i, t)
+    dqmc.update(expk, nu, config, bmats_up, bmats_dn, i, t)
     gf_up_ref, gf_dn_ref, _, _ = _greens(bmats_up, bmats_dn, t, prod_len)
 
     assert_gf_equal(gf_up, gf_up_ref)
@@ -230,13 +230,13 @@ def test_update_greens_blas(u, mu, beta, num_sites, num_times, i, t):
     prod_len = 2
     assume((i < num_sites) and (t < num_times))
     assume(num_times % prod_len == 0)
-    exp_k, nu, config, bmats_up, bmats_dn = _init(num_sites, num_times, u, mu, beta)
+    expk, nu, config, bmats_up, bmats_dn = _init(num_sites, num_times, u, mu, beta)
     gf_up, gf_dn, _, _ = _greens(bmats_up, bmats_dn, t, prod_len)
 
     # Update Green's function
     dqmc.update_greens_blas(nu, config, gf_up, gf_dn, i, t)
     # Update configuration and B-matrices and compute Greens function
-    dqmc.update(exp_k, nu, config, bmats_up, bmats_dn, i, t)
+    dqmc.update(expk, nu, config, bmats_up, bmats_dn, i, t)
     gf_up_ref, gf_dn_ref, _, _ = _greens(bmats_up, bmats_dn, t, prod_len)
 
     assert_gf_equal(gf_up, gf_up_ref)
@@ -248,7 +248,7 @@ def test_wrap_up_greens(u, mu, beta, num_sites, num_times, t):
     prod_len = 2
     assume(t < num_times)
     assume(num_times % prod_len == 0)
-    exp_k, nu, config, bmats_up, bmats_dn = _init(num_sites, num_times, u, mu, beta)
+    expk, nu, config, bmats_up, bmats_dn = _init(num_sites, num_times, u, mu, beta)
 
     # Compute Green's function of time slice `t`
     gf_up, gf_dn, _, _ = _greens(bmats_up, bmats_dn, t, prod_len)
@@ -267,7 +267,7 @@ def test_wrap_down_greens(u, mu, beta, num_sites, num_times, t):
     prod_len = 2
     assume(t < num_times)
     assume(num_times % prod_len == 0)
-    exp_k, nu, config, bmats_up, bmats_dn = _init(num_sites, num_times, u, mu, beta)
+    expk, nu, config, bmats_up, bmats_dn = _init(num_sites, num_times, u, mu, beta)
 
     # Compute Green's function of time slice `t`
     gf_up, gf_dn, _, _ = _greens(bmats_up, bmats_dn, t, prod_len)
