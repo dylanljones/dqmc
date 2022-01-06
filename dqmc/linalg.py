@@ -164,21 +164,19 @@ def matrix_product_sequence_0beta(mats, prod_len, shift):
     assert (num_mats % prod_len) == 0
     num_seqs = int(num_mats / prod_len)
     n, m = mats[0].shape
-    indices = np.arange(num_mats)[::-1]
-    indices = np.roll(indices, shift)
+    indices = np.arange(num_mats)
+    indices = np.roll(indices, -shift)
     if prod_len == 1:
-        return mats[indices[::-1]]
+        return mats[indices]
 
+    seq_indices = np.split(indices, num_seqs)
     prod_seq = np.zeros((num_seqs, n, m), dtype=np.float64)
-    for i in range(num_seqs):
-        i0 = i * prod_len
-        i1 = i0 + prod_len
-        prod_indices = indices[i0:i1]
-        prod = mats[prod_indices[0]]
-        for j in prod_indices[1:]:
-            prod = np.dot(prod, mats[j])
-        prod_seq[i] = prod
-    return prod_seq[::-1]
+    for s, idx in enumerate(seq_indices):
+        prod = mats[idx[0]]
+        for j in idx[1:]:
+            prod = np.dot(mats[j], prod)
+        prod_seq[s] = prod
+    return prod_seq
 
 
 @njit(
