@@ -192,7 +192,9 @@ def compute_timestep_mat_inv(expk_inv, nu, config, t, sigma):
     ..math::
         B_σ(h_t)^{-1} = [e^k e^{σ ν V_t(h_t)}]^{-1} = [e^k]^{-1} e^{-σ ν V_t(h_t)}
     """
-    return expk_inv * np.exp(-sigma * nu * config[:, t])[:, np.newaxis]
+    tmp = np.zeros((config.shape[0], 1), dtype=np.float64)
+    tmp[:, 0] = np.exp(-sigma * nu * config[:, t])
+    return expk_inv * tmp
 
 
 @njit(nt.UniTuple(bmat_t, 2)(expk_t, float64, conf_t), **jkwargs)
@@ -514,6 +516,46 @@ def update(expk, nu, config, bmats_up, bmats_dn, i, t):
     """
     config[i, t] = -config[i, t]
     update_timestep_mats(expk, nu, config, bmats_up, bmats_dn, t)
+
+
+@njit(nt.UniTuple(float64, 2)(float64, conf_t, gmat_t, gmat_t, int64, int64), **jkwargs)
+def compute_determinants(nu, config, gf_up, gf_dn, i, t):
+    r"""Computes the determinants used for computing the Metropolis acceptance ratio.
+
+    Parameters
+    ----------
+    nu : float
+        The parameter ν defined by :math:'\cosh(ν) = e^{U Δτ / 2}'
+    config : (N, L) np.ndarray
+        The configuration or Hubbard-Stratonovich field.
+    gf_up : np.ndarray
+        The spin-up Green's function.
+    gf_dn : np.ndarray
+        The spin-down Green's function.
+    i : int
+        The site index :math:'i' of the proposed spin-flip.
+    t : int
+        The time-step index :math:'t' of the proposed spin-flip.
+    Returns
+    -------
+    d_up : float
+        The spin up determinant.
+    d_dn : float
+        The spin down determinant.
+
+    Notes
+    -----
+    The determiants are computed via the Green's function:
+    ..math::
+        α_σ = e^{-2 σ ν s(i, t)} - 1
+        d_σ = 1 + (1 - G_{ii, σ}) α_σ
+    """
+    arg = -2 * nu * config[i, t]
+    alpha_up = np.expm1(UP * arg)
+    alpha_dn = np.expm1(DN * arg)
+    d_up = 1 + alpha_up * (1 - gf_up[i, i])
+    d_dn = 1 + alpha_dn * (1 - gf_dn[i, i])
+    return d_up, d_dn
 
 
 @njit(nt.float64(float64, conf_t, gmat_t, gmat_t, int64, int64), **jkwargs)
