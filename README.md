@@ -9,6 +9,12 @@ Fast and stable Determinant Quantum Monte Carlo simulations of the Hubbard model
 | :warning: **WARNING**: This project is still under development and might contain errors or change significantly in the future! |
 | --- |
 
+Uses numba's just in time compilation (jit) and optionally Fortran implementations for
+the most expensive methods of the Determinant Quantum Monte Carlo iteration
+to achieve high performance simulations accesable through a Python interface. The
+computation of the inversion of block p-cyclic matrices is stabilized via
+the ASvQRD (Accurate Solution via QRD with column pivoting) algorithm (see Ref [6]).
+
 ## Installation
 
 Install via `pip` from github:
@@ -216,4 +222,4 @@ pre-commit run
    Phys. Rev. B 29, 4159 (1984) [DOI](https://doi.org/10.1103/PhysRevB.28.4059)
 6. Z. Bai, C.-R. Lee, R.-C. Li and S. Xu
    "Stable solutions of linear systems involving long chain of matrix multiplications"
-   Linear Algebra Appl. 435, 659-673 (2011) [DOI](https://doi.org/10.1007/978-3-319-09873-9_44)
+   Linear Algebra Appl. 435, 659-673 (2011) [DOI](https://doi.org/10.1016/j.laa.2010.06.023)

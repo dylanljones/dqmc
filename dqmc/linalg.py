@@ -13,11 +13,6 @@ import numpy as np
 from scipy import linalg as la
 from numba.extending import get_cython_function_address
 from numba import njit, float64, int64
-# Try to import Fortran implementation
-try:
-    from .src.timeflow import timeflow_map as _timeflow_map_f
-except ImportError:
-    _timeflow_map_f = None
 
 
 _dble = ctypes.POINTER(ctypes.c_double)
@@ -169,21 +164,19 @@ def matrix_product_sequence_0beta(mats, prod_len, shift):
     assert (num_mats % prod_len) == 0
     num_seqs = int(num_mats / prod_len)
     n, m = mats[0].shape
-    indices = np.arange(num_mats)[::-1]
-    indices = np.roll(indices, shift)
+    indices = np.arange(num_mats)
+    indices = np.roll(indices, -shift)
     if prod_len == 1:
         return mats[indices]
 
+    seq_indices = np.split(indices, num_seqs)
     prod_seq = np.zeros((num_seqs, n, m), dtype=np.float64)
-    for i in range(num_seqs):
-        i0 = i * prod_len
-        i1 = i0 + prod_len
-        prod_indices = indices[i0:i1]
-        prod = mats[prod_indices[0]]
-        for j in prod_indices[1:]:
-            prod = np.dot(prod, mats[j])
-        prod_seq[i] = prod
-    return prod_seq[::-1]
+    for s, idx in enumerate(seq_indices):
+        prod = mats[idx[0]]
+        for j in idx[1:]:
+            prod = np.dot(mats[j], prod)
+        prod_seq[s] = prod
+    return prod_seq
 
 
 @njit(
@@ -227,7 +220,7 @@ def matrix_product_sequence_beta0(mats, prod_len, shift):
     indices = np.arange(num_mats)
     indices = np.roll(indices, -shift)
     if prod_len == 1:
-        return mats[indices]
+        return mats[indices[::-1]]
 
     prod_seq = np.zeros((num_seqs, n, m), dtype=np.float64)
     for i in range(num_seqs):
@@ -241,7 +234,7 @@ def matrix_product_sequence_beta0(mats, prod_len, shift):
     return prod_seq[::-1]
 
 
-def _timeflow_map(mats):
+def timeflow_map(mats):
     # Compute first QR decomposition with column pivoting
     q, jpvt, tau, work, info = la.lapack.dgeqp3(mats[0])
     # Extract diagonal elements of R (upper triangular matrix of Q)
@@ -303,12 +296,8 @@ def timeflow_map_0beta(matrices, prod_len, t):
     """
     # Pre-compute matrix product sequence
     mats = matrix_product_sequence_0beta(matrices, prod_len, t)
-    if _timeflow_map_f is not None:
-        # Call fortran implementation
-        q, d, t, tau, lwork, info = _timeflow_map_f(mats)
-        return q, d, t, tau, lwork
     # Call Scipy implementation
-    return _timeflow_map(mats)
+    return timeflow_map(mats)
 
 
 def timeflow_map_beta0(matrices, prod_len, t):
@@ -340,9 +329,5 @@ def timeflow_map_beta0(matrices, prod_len, t):
     """
     # Pre-compute matrix product sequence
     mats = matrix_product_sequence_beta0(matrices, prod_len, t)
-    if _timeflow_map_f is not None:
-        # Call fortran implementation
-        q, d, t, tau, lwork, info = _timeflow_map_f(mats)
-        return q, d, t, tau, lwork
     # Call Scipy implementation
-    return _timeflow_map(mats)
+    return timeflow_map(mats)
