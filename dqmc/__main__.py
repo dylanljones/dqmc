@@ -98,10 +98,10 @@ def parse_args(argv=None):
 def main():
     plotable = ["nup", "ndn", "n2", "moment"]
     ylabels = {
-        "nup": "$<n_↑>$",
-        "ndn": "$<n_↓>$",
-        "n2": "$<n_↑ n_↓>$",
-        "moment": "$<m_z^2>$"
+        "nup": r"$\langle n_↑ \rangle$",
+        "ndn": r"$\langle n_↓ \rangle$",
+        "n2": r"$\langle n_↑ n_↓ \rangle$",
+        "moment": r"$\langle m_z^2 \rangle$"
     }
     xlabel_aliases = {
         "temp": "T"
