@@ -202,7 +202,6 @@ def _max_diff(actual, desired):
     max_diff = np.max(diff)
     max_diff_rel = np.max(diff_rel)
 
-    print(num_diff, max_diff, max_diff_rel)
     return num_diff / desired.size
 
 
