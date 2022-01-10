@@ -25,8 +25,7 @@ import math
 import logging
 import numpy as np
 import numpy.linalg as la
-from scipy.linalg import expm
-from scipy.linalg import lapack
+from scipy.linalg import expm, lapack
 from numba import njit, float64, int8, int64, void
 from numba import types as nt
 from .model import HubbardModel  # noqa: F401
@@ -46,6 +45,7 @@ logger = logging.getLogger("dqmc")
 expk_t = float64[:, :]
 conf_t = int8[:, :]
 bmat_t = float64[:, :, ::1]
+bmat_t2 = float64[:, :, :, ::1]
 gmat_t = float64[:, ::1]
 
 UP, DN = +1, -1
@@ -105,9 +105,10 @@ def init_qmc(model, num_timesteps, seed):
     dtau = model.beta / num_timesteps
     check = model.u * model.hop * dtau ** 2
     if check > 0.1:
-        logger.warning(
-            "Increase number of time steps: Check-value %.2f should be <0.1!", check
-        )
+        dt_max = math.sqrt(0.1 / (model.u * model.hop))
+        num_times_min = math.ceil(model.beta / dt_max)
+        logger.warning("Check-value %.2f should be <0.1!", check)
+        logger.warning("Increase number of time steps to >%s", num_times_min)
     else:
         logger.debug("Check-value %.4f is <0.1!", check)
 

@@ -13,7 +13,8 @@ import logging
 logger = logging.getLogger("dqmc")
 
 # Logging format
-frmt = "[%(asctime)s] (%(process)d) - %(name)s:%(levelname)-8s - %(message)s"
+# frmt = "[%(asctime)s] (%(process)d) - %(name)s:%(levelname)-8s - %(message)s"
+frmt = "[%(asctime)s] (%(process)d) - %(levelname)-7s - %(message)s"
 formatter = logging.Formatter(frmt, datefmt="%H:%M:%S")
 
 # Set up console logger
