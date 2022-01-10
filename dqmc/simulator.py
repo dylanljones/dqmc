@@ -2,7 +2,7 @@
 #
 # This code is part of dqmc.
 #
-# Copyright (c) 2021, Dylan Jones
+# Copyright (c) 2022, Dylan Jones
 #
 # This code is licensed under the MIT License. The copyright notice in the
 # LICENSE file in the root directory and this permission notice shall
@@ -46,6 +46,14 @@ class Parameters:
     prod_len: int = 1
     seed: int = 0
 
+    def copy(self, **kwargs):
+        # Copy parameters
+        p = Parameters(**self.__dict__)
+        # Update new parameters with given kwargs
+        for key, val in kwargs.items():
+            setattr(p, key, val)
+        return p
+
     @property
     def beta(self):
         return self.num_timesteps * self.dt
@@ -64,6 +72,17 @@ class Parameters:
 
 
 def parse(file):
+    """Parses an input text file and extracts the DQMC parameters.
+
+    Parameters
+    ----------
+    file : str
+        The path of the input file.
+    Returns
+    -------
+    p : Parameters
+        The parsed parameters of the input file.
+    """
     shape = 0
     u = 0.
     eps = 0.
@@ -122,11 +141,12 @@ def parse(file):
             temp = float(val)
         else:
             logger.warning("Parameter %s of file '%s' not recognized!", head, file)
+    if temp:
+        beta = 1 / temp
     if dt == 0:
-        if temp:
-            beta = 1 / temp
         dt = beta / num_timesteps
-
+    elif num_timesteps == 0:
+        num_timesteps = int(beta / dt)
     return Parameters(shape, u, eps, t, mu, dt, num_timesteps, warm, meas,
                       num_recomp, sampl_recomp, prod_len)
 
@@ -294,9 +314,23 @@ class DQMC:
 
 
 def run_dqmc(p, callback=None):
+    """Runs a DQMC simulation.
+
+    Parameters
+    ----------
+    p : Parameters
+        The input parameters of the DQMC simulation.
+    callback : callable, optional
+        A optional callback method for measuring additional observables.
+    Returns
+    -------
+    results : Tuple
+        The results of the DQMC simulation. The last item is the result of the user
+        callback or `None`.
+    """
     model = hubbard_hypercube(p.shape, p.u, p.eps, p.t, p.mu, p.beta, periodic=True)
     dqmc = DQMC(model, p.num_timesteps, p.num_wraps, p.prod_len, p.seed,
-                p.sampl_recomp)
+                bool(p.sampl_recomp))
     try:
         extra_results = dqmc.simulate(p.num_equil, p.num_sampl, callback=callback)
     except np.linalg.LinAlgError:

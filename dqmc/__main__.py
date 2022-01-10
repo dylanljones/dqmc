@@ -2,7 +2,7 @@
 #
 # This code is part of dqmc.
 #
-# Copyright (c) 2021, Dylan Jones
+# Copyright (c) 2022, Dylan Jones
 #
 # This code is licensed under the MIT License. The copyright notice in the
 # LICENSE file in the root directory and this permission notice shall
@@ -98,10 +98,10 @@ def parse_args(argv=None):
 def main():
     plotable = ["nup", "ndn", "n2", "moment"]
     ylabels = {
-        "nup": "$<n_↑>$",
-        "ndn": "$<n_↓>$",
-        "n2": "$<n_↑ n_↓>$",
-        "moment": "$<m_z^2>$"
+        "nup": r"$\langle n_↑ \rangle$",
+        "ndn": r"$\langle n_↓ \rangle$",
+        "n2": r"$\langle n_↑ n_↓ \rangle$",
+        "moment": r"$\langle m_z^2 \rangle$"
     }
     xlabel_aliases = {
         "temp": "T"

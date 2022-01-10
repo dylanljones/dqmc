@@ -2,7 +2,7 @@
 #
 # This code is part of dqmc.
 #
-# Copyright (c) 2021, Dylan Jones
+# Copyright (c) 2022, Dylan Jones
 
 import numpy as np
 from . import greens as _gf  # noqa

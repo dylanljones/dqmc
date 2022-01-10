@@ -2,7 +2,11 @@
 #
 # This code is part of dqmc.
 #
-# Copyright (c) 2021, Dylan Jones
+# Copyright (c) 2022, Dylan Jones
+#
+# This code is licensed under the MIT License. The copyright notice in the
+# LICENSE file in the root directory and this permission notice shall
+# be included in all copies or substantial portions of the Software.
 
 """Tests for the main dqmc methods.
 
@@ -202,7 +206,6 @@ def _max_diff(actual, desired):
     max_diff = np.max(diff)
     max_diff_rel = np.max(diff_rel)
 
-    print(num_diff, max_diff, max_diff_rel)
     return num_diff / desired.size
 
 

@@ -1,12 +1,12 @@
-shape       25
+shape       6
 U           4
 eps         0
 t           1
-mu          2
+mu          0
 temp        0.5
-L           40
+L           96
 nequil      512
-nsampl      512
+nsampl      2048
 nwraps      8
 prodLen     8
 recomp      1

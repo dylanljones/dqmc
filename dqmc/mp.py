@@ -2,7 +2,7 @@
 #
 # This code is part of dqmc.
 #
-# Copyright (c) 2021, Dylan Jones
+# Copyright (c) 2022, Dylan Jones
 #
 # This code is licensed under the MIT License. The copyright notice in the
 # LICENSE file in the root directory and this permission notice shall
@@ -70,9 +70,40 @@ def map_params(p, **kwargs):
     return params
 
 
+# noinspection PyShadowingNames
 def run_dqmc_parallel(params, callback=None, max_workers=None, progress=True):
-    if max_workers is None or max_workers == -1:
+    """Runs multiple DQMC simulations in parallel.
+
+    Parameters
+    ----------
+    params : Iterable of Parameters
+        The input parameters to map to the processes. The list of results preserves
+        the input order of the parameters.
+    callback : callable, optional
+        A optional callback method for measuring additional observables.
+    max_workers : int, optional
+        The number of processes to use. If `None` or `0` the number of
+        logical cores of the system is used. If a negative integer is passed it
+        is subtracted from the number of logical cores. For example, `max_workers=-1`
+        uses the number of cores minus one as number of processes.
+    progress : bool, optional
+        If `True` a progresss bar is printed.
+    Returns
+    -------
+    results : List
+        The results of the DQMC simulations in the order of the input parameters.
+
+    Examples
+    --------
+    >>> p = Parameters(10, 4, 0, 1, 2, 0.05, 40)  # Default parameters
+    >>> u = np.arange(1, 3, 0.5)  # Interactions
+    >>> params = map_params(p, u=u)  # Map interaction array to parameters
+    >>> res = run_dqmc_parallel(params, max_workers=-1)
+    """
+    if max_workers is None or max_workers == 0:
         max_workers = psutil.cpu_count(logical=True)
+    elif max_workers < 0:
+        max_workers = max(1, psutil.cpu_count(logical=True) - max_workers)
 
     args = [(p, callback) for p in params]
     with concurrent.futures.ProcessPoolExecutor(max_workers) as executor:
