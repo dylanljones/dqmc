@@ -88,11 +88,12 @@ def parse_args(argv=None):
     # Half filling
     if hf and "mu" not in kwargs:
         if "u" in kwargs and "eps" not in kwargs:
-            kwargs["mu"] = np.array(kwargs["u"]) / 2 - p.eps
+            p.mu = 0.
+            # kwargs["mu"] = np.array(kwargs["u"]) / 2 - p.eps
         elif "eps" in kwargs and "u" not in kwargs:
-            kwargs["mu"] = p.u / 2 - np.array(kwargs["eps"])
-        elif "u" in kwargs and "eps" in kwargs:
-            kwargs["mu"] = np.array(kwargs["u"]) / 2 - np.array(kwargs["eps"])
+            kwargs["mu"] = np.array(kwargs["eps"])  # p.u / 2 - np.array(kwargs["eps"])
+        # elif "u" in kwargs and "eps" in kwargs:
+        #     kwargs["mu"] = np.array(kwargs["u"]) / 2 - np.array(kwargs["eps"])
 
     return p, kwargs, plot, save, processes
 
