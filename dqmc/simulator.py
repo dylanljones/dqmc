@@ -72,6 +72,17 @@ class Parameters:
 
 
 def parse(file):
+    """Parses an input text file and extracts the DQMC parameters.
+
+    Parameters
+    ----------
+    file : str
+        The path of the input file.
+    Returns
+    -------
+    p : Parameters
+        The parsed parameters of the input file.
+    """
     shape = 0
     u = 0.
     eps = 0.
@@ -303,9 +314,23 @@ class DQMC:
 
 
 def run_dqmc(p, callback=None):
+    """Runs a DQMC simulation.
+
+    Parameters
+    ----------
+    p : Parameters
+        The input parameters of the DQMC simulation.
+    callback : callable, optional
+        A optional callback method for measuring additional observables.
+    Returns
+    -------
+    results : Tuple
+        The results of the DQMC simulation. The last item is the result of the user
+        callback or `None`.
+    """
     model = hubbard_hypercube(p.shape, p.u, p.eps, p.t, p.mu, p.beta, periodic=True)
     dqmc = DQMC(model, p.num_timesteps, p.num_wraps, p.prod_len, p.seed,
-                p.sampl_recomp)
+                bool(p.sampl_recomp))
     try:
         extra_results = dqmc.simulate(p.num_equil, p.num_sampl, callback=callback)
     except np.linalg.LinAlgError:
