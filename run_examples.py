@@ -60,6 +60,8 @@ def plot_local_moment(file, temps, interactions, max_workers=-1, save=True):
     ax.legend()
     ax.set_xlabel(r"$T$")
     ax.set_ylabel(r"$\langle m_z^2 \rangle$")
+    ax.set_ylim(0.48, 1.02)
+
     ax.grid()
     # fig.tight_layout()
     if save:
@@ -72,6 +74,7 @@ def main():
     root = "examples"
     temps = np.geomspace(0.1, 100, 20)
     inter = [1, 2, 4, 6, 8]
+    max_workers = -1
 
     # Find all text files in `root` directory
     files = list()
@@ -85,7 +88,7 @@ def main():
     # Run simulations for each input file
     for file in files:
         print(f"Running simulations for {file}")
-        plot_local_moment(file, temps, inter)
+        plot_local_moment(file, temps, inter, max_workers, save=True)
         print()
 
 

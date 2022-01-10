@@ -6,7 +6,7 @@ mu          0
 temp        0.5
 L           96
 nequil      512
-nsampl      1024  # 4096
+nsampl      2048
 nwraps      8
 prodLen     8
 recomp      1
