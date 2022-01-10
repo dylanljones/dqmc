@@ -46,6 +46,14 @@ class Parameters:
     prod_len: int = 1
     seed: int = 0
 
+    def copy(self, **kwargs):
+        # Copy parameters
+        p = Parameters(**self.__dict__)
+        # Update new parameters with given kwargs
+        for key, val in kwargs.items():
+            setattr(p, key, val)
+        return p
+
     @property
     def beta(self):
         return self.num_timesteps * self.dt
@@ -122,11 +130,12 @@ def parse(file):
             temp = float(val)
         else:
             logger.warning("Parameter %s of file '%s' not recognized!", head, file)
+    if temp:
+        beta = 1 / temp
     if dt == 0:
-        if temp:
-            beta = 1 / temp
         dt = beta / num_timesteps
-
+    elif num_timesteps == 0:
+        num_timesteps = int(beta / dt)
     return Parameters(shape, u, eps, t, mu, dt, num_timesteps, warm, meas,
                       num_recomp, sampl_recomp, prod_len)
 
