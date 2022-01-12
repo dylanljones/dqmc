@@ -71,15 +71,30 @@ def map_params(p, **kwargs):
 
 
 def get_max_workers(max_workers=None):
+    """Returns the number of processes used to run multiple workloads in parallel.
+
+    Parameters
+    ----------
+    max_workers : int, optional
+        The number of processes to use. If `None` or `0` the number of
+        logical cores of the system is used. If a negative integer is passed it
+        is subtracted from the number of logical cores. For example, `max_workers=-1`
+        uses the number of cores minus one as number of processes.
+    Returns
+    -------
+    max_workers : int
+        The number of processes to use.
+    """
     if max_workers is None or max_workers == 0:
         max_workers = psutil.cpu_count(logical=True)
     elif max_workers < 0:
-        max_workers = max(1, psutil.cpu_count(logical=True) - max_workers)
+        max_workers = max(1, psutil.cpu_count(logical=True) - abs(max_workers))
     return max_workers
 
 
 # noinspection PyShadowingNames
-def run_dqmc_parallel(params, callback=None, max_workers=None, progress=True):
+def run_dqmc_parallel(params, callback=None, max_workers=None, progress=True,
+                      header=None):
     """Runs multiple DQMC simulations in parallel.
 
     Parameters
@@ -90,16 +105,23 @@ def run_dqmc_parallel(params, callback=None, max_workers=None, progress=True):
     callback : callable, optional
         A optional callback method for measuring additional observables.
     max_workers : int, optional
-        The number of processes to use. If `None` or `0` the number of
-        logical cores of the system is used. If a negative integer is passed it
-        is subtracted from the number of logical cores. For example, `max_workers=-1`
-        uses the number of cores minus one as number of processes.
+        The number of processes to use (see `get_max_workers`). If `None` or `0`
+        the number of logical cores of the system is used. If a negative integer
+        is passed it is subtracted from the number of logical cores. For example,
+        `max_workers=-1` uses the number of cores minus one as number of processes.
     progress : bool, optional
         If `True` a progresss bar is printed.
+    header : str, optional
+        A header for printing the progress bar. Ignored if `progress=False`.
+
     Returns
     -------
     results : List
         The results of the DQMC simulations in the order of the input parameters.
+
+    See Also
+    --------
+    get_max_workers : Determines the number of processes used.
 
     Examples
     --------
@@ -108,15 +130,12 @@ def run_dqmc_parallel(params, callback=None, max_workers=None, progress=True):
     >>> params = map_params(p, u=u)  # Map interaction array to parameters
     >>> res = run_dqmc_parallel(params, max_workers=-1)
     """
-    if max_workers is None or max_workers == 0:
-        max_workers = psutil.cpu_count(logical=True)
-    elif max_workers < 0:
-        max_workers = max(1, psutil.cpu_count(logical=True) - max_workers)
+    max_workers = get_max_workers(max_workers)
 
     args = [(p, callback) for p in params]
     with concurrent.futures.ProcessPoolExecutor(max_workers) as executor:
         results = executor.map(run_dqmc, *zip(*args))
         if progress:
-            return list(tqdm(results, total=len(args)))
+            return list(tqdm(results, total=len(args), desc=header))
         else:
             return list(results)

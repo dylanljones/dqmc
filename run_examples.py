@@ -11,7 +11,8 @@
 import os.path
 import numpy as np
 import matplotlib.pyplot as plt
-from dqmc import map_params, run_dqmc_parallel, parse
+from dqmc import map_params, parse
+from dqmc.data import Database, compute_datasets
 
 
 def transform_results(results):
@@ -33,49 +34,101 @@ def transform_results(results):
     return out
 
 
-def average_results(results):
-    tresults = transform_results(results)
+def average_observables(results):
+    # Only use observables, not Green's functions (first two items)
+    tresults = transform_results(results)[2:]
+    # Average observables
     for i in range(len(tresults) - 1):
         tresults[i] = np.mean(tresults[i], axis=1)
     return tresults
 
 
-def plot_local_moment(file, temps, interactions, max_workers=-1, save=True):
+def compute_data_temp(db, file, temps, interactions, max_workers=-1, batch=None,
+                      overwrite=False):
+
+    print(f"Running simulations for {file}")
     p_default = parse(file)
-    if not hasattr(interactions, "__len__"):
-        interactions = [interactions]
+    for u in interactions:
+        p = p_default.copy(u=u)
+        params = map_params(p, temp=temps)
+
+        # Check which datasets allready exist
+        missing = db.find_missing(params, overwrite)
+        # Compute missing datasets and store in database
+        head = f"U={u}"
+        if missing:
+            compute_datasets(db, missing, max_workers, batch_size=batch, header=head)
+        else:
+            print(f"{head}: Found existing data!")
+    print("Done!\n")
+
+
+def plot_local_moment(db, file, temps, interactions, save=True):
+    p_default = parse(file)
 
     directory, filename = os.path.split(file)
     name = os.path.splitext(filename)[0]
     figpath = os.path.join(directory, name + "_moment" + ".png")
 
     fig, ax = plt.subplots()
-    # ax.set_title("Input: " + filename)
     ax.set_xscale("log")
     for u in interactions:
         p = p_default.copy(u=u)
         params = map_params(p, temp=temps)
-        # Run simulations and build results
-        results = run_dqmc_parallel(params, max_workers=max_workers)
-        n_up, n_dn, n_double, moment, _ = average_results(results)
-        # Plot local moment
-        ax.plot(temps, moment, marker="o", ms=4, label=f"$U={u}$")
+        results = db.get_results(*params)
+        n_up, n_dn, n_double, moment, _ = average_observables(results)
+        ax.plot(temps, moment, marker="o", ms=3, label=f"$U={u}$")
 
-    ax.legend()
     ax.set_xlabel(r"$T$")
     ax.set_ylabel(r"$\langle m_z^2 \rangle$")
     ax.set_ylim(0.48, 1.02)
-
+    ax.set_xticks([0.1, 1, 10, 100])
+    ax.set_xticklabels(["0.1", "1", "10", "100"])
     ax.grid()
-    # fig.tight_layout()
+    ax.legend()
+    fig.tight_layout()
     if save:
         fig.savefig(figpath)
+    return fig, ax
 
+
+def plot_magnetization(db, file, temps, interactions, save=True):
+    p_default = parse(file)
+
+    directory, filename = os.path.split(file)
+    name = os.path.splitext(filename)[0]
+    figpath = os.path.join(directory, name + "_mag" + ".png")
+
+    fig, ax = plt.subplots()
+    ax.set_xscale("log")
+    for u in interactions:
+        p = p_default.copy(u=u)
+        params = map_params(p, temp=temps)
+        results = db.get_results(*params)
+        n_up, n_dn, n_double, moment, _ = average_observables(results)
+        mag = n_up - n_dn
+        ax.plot(temps, mag, marker="o", ms=3, label=f"$U={u}$")
+
+    ax.set_xlabel(r"$T$")
+    ax.set_ylabel(r"$\langle m_z \rangle$")
+    # ax.set_ylim(0.48, 1.02)
+    ax.set_xticks([0.1, 1, 10, 100])
+    ax.set_xticklabels(["0.1", "1", "10", "100"])
+    ax.grid()
+    ax.legend()
+    fig.tight_layout()
+    if save:
+        fig.savefig(figpath)
     return fig, ax
 
 
 def main():
     root = "examples"
+    batch = None
+    overwrite = False
+
+    db = Database(os.path.join(root, "examples.hdf5"))
+
     temps = np.geomspace(0.1, 100, 20)
     inter = [1, 2, 4, 6, 8]
     max_workers = -1
@@ -91,9 +144,8 @@ def main():
 
     # Run simulations for each input file
     for file in files:
-        print(f"Running simulations for {file}")
-        plot_local_moment(file, temps, inter, max_workers, save=True)
-        print()
+        compute_data_temp(db, file, temps, inter, max_workers, batch, overwrite)
+        plot_local_moment(db, file, temps, inter)
 
 
 if __name__ == "__main__":
