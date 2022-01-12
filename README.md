@@ -162,13 +162,17 @@ dqmc = DQMC(model, num_timesteps, num_recomp=1, prod_len=1, seed=0)
 results = dqmc.simulate(warmup, measure, callback=mfuncs.occupation)
 ```
 The `simulate`-method measures the observables
-- `n_up`
+- `gf_up`:
+   The spin-up Green's function `<G_↑>`.
+- `gf_up`:
+   The spin-up Green's function `<G_↓>`.
+- `n_up`:
    The spin-up occupation `<n_↑>`.
-- `n_dn`
+- `n_dn`:
    The spin-down occupation `<n_↓>`.
-- `n_double`
+- `n_double`:
    The double occupation `<n_↑ n_↓>`.
-- `local_moment`
+- `local_moment`:
    The local moment `<n_↑> + <n_↓> - 2 <n_↑ n_↓>`.
 
 
