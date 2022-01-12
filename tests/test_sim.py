@@ -59,3 +59,35 @@ def test_half_filling_thigh(u):
     p = _init(u, mu, 1 / temp)
     n_up, n_dn, n_dbl, m2, _ = run_dqmc(p)
     assert_allclose(n_up + n_dn, np.full_like(n_up, fill_value=1.0), rtol=0.01)
+
+
+def test_moment_tlow():
+    u = 2.
+    mu = 0.0
+    temp = 0.1
+    p = _init(u, mu, 1 / temp, num_times=96)
+    n_up, n_dn, n_dbl, m2, _ = run_dqmc(p)
+    assert_allclose(m2, np.full_like(n_up, fill_value=0.65), rtol=0.1)
+
+    u = 4.
+    mu = 0.0
+    temp = 0.1
+    p = _init(u, mu, 1 / temp, num_times=96)
+    n_up, n_dn, n_dbl, m2, _ = run_dqmc(p)
+    assert_allclose(m2, np.full_like(n_up, fill_value=0.8), rtol=0.1)
+
+    u = 8.
+    mu = 0.0
+    temp = 0.1
+    p = _init(u, mu, 1 / temp, num_times=96)
+    n_up, n_dn, n_dbl, m2, _ = run_dqmc(p)
+    assert_allclose(m2, np.full_like(n_up, fill_value=0.9), rtol=0.1)
+
+
+@given(st_u)
+def test_moment_thigh(u):
+    mu = 0.0
+    temp = 100
+    p = _init(u, mu, 1 / temp)
+    n_up, n_dn, n_dbl, m2, _ = run_dqmc(p)
+    assert_allclose(m2, np.full_like(n_up, fill_value=0.5), rtol=0.1)

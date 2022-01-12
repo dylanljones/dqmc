@@ -70,6 +70,14 @@ def map_params(p, **kwargs):
     return params
 
 
+def get_max_workers(max_workers=None):
+    if max_workers is None or max_workers == 0:
+        max_workers = psutil.cpu_count(logical=True)
+    elif max_workers < 0:
+        max_workers = max(1, psutil.cpu_count(logical=True) - max_workers)
+    return max_workers
+
+
 # noinspection PyShadowingNames
 def run_dqmc_parallel(params, callback=None, max_workers=None, progress=True):
     """Runs multiple DQMC simulations in parallel.

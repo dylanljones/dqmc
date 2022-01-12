@@ -1,76 +1,231 @@
 ! Created by Dylan Jones on 30/12/2021.
 
 
-subroutine matrix_product_sequence_0beta(L, N, MATS, S, SEQS, T)
+subroutine compute_timestep_mat(N, L, EXPK, NU, CONFIG, T, B, SIGMA)
 
-implicit none
+    implicit none
 
-    integer :: L, N, S, K, T
-    double precision, dimension(*) :: MATS(L, N, N)
-    double precision, dimension(*) :: SEQS(S, N, N)
-    double precision, dimension(*) :: TMP(N, N), C(N, N)
-    integer, dimension(*) :: INDICES(L)
-    integer :: i, j, i0, i1
+    integer, intent(in) :: N, L
+    double precision, dimension(*), intent(in) :: EXPK(N, N)
+    double precision, dimension(*), intent(inout) :: B(N, N)
+    integer, dimension(*), intent(in) :: CONFIG(N, L)
+    integer, intent(in) :: SIGMA
+    integer, intent(in) :: T
+    double precision, intent(in) :: NU
+    integer :: i, ONE
 
-    ! Number of elements in each matrix product
-    K = int(L / S)
-    ! Build shifted index array
-    do i=1, L
-        j = i + T - 1
-        if (j > L) j = modulo(j, L)
-        INDICES(i) = j
+    ONE = 1
+    B(:, :) = EXPK
+    do i=1, N
+        call dscal(N, exp(SIGMA * NU * CONFIG(i, T)), B(:, i), ONE)
     end do
-    ! Multiply products and store in Sequence
-    do i=1, S
-        i0 = ((i-1) * K) + 1
-        i1 = i * K
-        i0 = i1-K+1
-        TMP(:, :) = MATS(INDICES(i0), :, :)
-        do j = i0+1, i1
-            T = INDICES(j)
-            call dgemm("N", "N", N, N, N, 1.d0, MATS(T, :, :), N, TMP, N, 0.d0, C, N)
-            TMP = C
+
+end subroutine compute_timestep_mat
+
+
+
+subroutine compute_timestep_mat_inv(N, L, EXPK_INV, NU, CONFIG, T, B, SIGMA)
+
+    implicit none
+
+    integer, intent(in) :: N, L
+    double precision, dimension(*), intent(in) :: EXPK_INV(N, N)
+    double precision, dimension(*), intent(inout) :: B(N, N)
+    integer, dimension(*), intent(in) :: CONFIG(N, L)
+    integer, intent(in) :: SIGMA
+    integer, intent(in) :: T
+    double precision, intent(in) :: NU
+    integer :: i, ONE
+
+    ONE = 1
+    B(:, :) = EXPK_INV
+    do i=1, N
+        call dscal(N, exp(-SIGMA * NU * CONFIG(i, T)), B(i, :), ONE)
+    end do
+
+end subroutine compute_timestep_mat_inv
+
+
+
+subroutine compute_timestep_mats(N, L, EXPK, NU, CONFIG, BMATS_UP, BMATS_DN)
+
+    implicit none
+
+    integer, intent(in) :: N, L
+    double precision, dimension(*), intent(in) :: EXPK(N, N)
+    double precision, dimension(*), intent(inout) :: BMATS_UP(L, N, N)
+    double precision, dimension(*), intent(inout) :: BMATS_DN(L, N, N)
+    integer, dimension(*), intent(in) :: CONFIG(N, L)
+    double precision, intent(in) :: NU
+    integer :: i, t, ONE
+    double precision :: tmp
+
+    ONE = 1
+    do t=1, L
+        BMATS_UP(t, :, :) = EXPK
+        BMATS_DN(t, :, :) = EXPK
+        do i=1, N
+            tmp = exp(NU * CONFIG(i, T))
+            call dscal(N, tmp, BMATS_UP(t, :, i), ONE)
+            call dscal(N, 1/tmp, BMATS_DN(t, :, i), ONE)
         end do
-        SEQS(i, :, :) = TMP(:, :)
+    end do
+
+end subroutine compute_timestep_mats
+
+
+
+subroutine compute_timestep_mats_inv(N, L, EXPK_INV, NU, CONFIG, BMATS_UP, BMATS_DN)
+
+    implicit none
+
+    integer, intent(in) :: N, L
+    double precision, dimension(*), intent(in) :: EXPK_INV(N, N)
+    double precision, dimension(*), intent(inout) :: BMATS_UP(L, N, N)
+    double precision, dimension(*), intent(inout) :: BMATS_DN(L, N, N)
+    integer, dimension(*), intent(in) :: CONFIG(N, L)
+    double precision, intent(in) :: NU
+    integer :: i, t, ONE
+    double precision :: tmp
+
+    ONE = 1
+    do t=1, L
+        BMATS_UP(t, :, :) = EXPK_INV
+        BMATS_DN(t, :, :) = EXPK_INV
+        do i=1, N
+            tmp = exp(-NU * CONFIG(i, T))
+            call dscal(N, tmp, BMATS_UP(t, i, :), ONE)
+            call dscal(N, 1/tmp, BMATS_DN(t, i, :), ONE)
+        end do
+    end do
+
+end subroutine compute_timestep_mats_inv
+
+
+
+subroutine update_timestep_mats(N, L, EXPK, NU, CONFIG, BMATS_UP, BMATS_DN, T)
+
+    implicit none
+
+    integer, intent(in) :: N, L
+    double precision, dimension(*), intent(in) :: EXPK(N, N)
+    double precision, dimension(*), intent(inout) :: BMATS_UP(L, N, N)
+    double precision, dimension(*), intent(inout) :: BMATS_DN(L, N, N)
+    double precision, intent(in) :: NU
+    integer, dimension(*), intent(in) :: CONFIG(N, L)
+    integer, intent(in) :: T
+    integer :: i, ONE
+    double precision :: tmp
+
+    ONE = 1
+    BMATS_UP(t, :, :) = EXPK
+    BMATS_DN(t, :, :) = EXPK
+    do i=1, N
+        tmp = exp(NU * CONFIG(i, T))
+        call dscal(N, tmp, BMATS_UP(t, :, i), ONE)
+        call dscal(N, 1/tmp, BMATS_DN(t, :, i), ONE)
+    end do
+
+end subroutine update_timestep_mats
+
+
+
+subroutine update_timestep_mats_inv(N, L, EXPK_INV, NU, CONFIG, BMATS_UP, BMATS_DN, T)
+
+    implicit none
+
+    integer, intent(in) :: N, L
+    double precision, dimension(*), intent(in) :: EXPK_INV(N, N)
+    double precision, dimension(*), intent(inout) :: BMATS_UP(L, N, N)
+    double precision, dimension(*), intent(inout) :: BMATS_DN(L, N, N)
+    double precision, intent(in) :: NU
+    integer, dimension(*), intent(in) :: CONFIG(N, L)
+    integer, intent(in) :: T
+    integer :: i, ONE
+    double precision :: tmp
+
+    ONE = 1
+    BMATS_UP(t, :, :) = EXPK_INV
+    BMATS_DN(t, :, :) = EXPK_INV
+    do i=1, N
+        tmp = exp(-NU * CONFIG(i, T))
+        call dscal(N, tmp, BMATS_UP(t, i, :), ONE)
+        call dscal(N, 1/tmp, BMATS_DN(t, i, :), ONE)
+    end do
+
+end subroutine update_timestep_mats_inv
+
+
+
+subroutine matrix_product_sequence_0beta(L, N, MATS, S, SEQ, t)
+
+    implicit none
+
+    integer, intent(in) :: N, L, S, t
+    double precision, dimension(*), intent(in) :: MATS(L, N, N)
+    double precision, dimension(*), intent(inout) :: SEQ(S, N, N)
+    double precision, dimension(*) :: TMP(N, N)
+    integer LEN
+    integer i, j, i0, idx
+    double precision :: alpha, beta
+
+    alpha = 1.d0
+    beta = 0.d0
+    LEN = int(L / S)
+
+    do j=1, S
+        i0 = (t + (j-1) * LEN)
+        if (i0 > L) i0 = i0 - L
+        ! First matrix
+        SEQ(j, :, :) = MATS(i0, :, :)
+
+        do i=i0 + 1, i0 + LEN - 1
+            idx = i
+            if (idx > L) idx = idx - L
+            ! Multiply next matrix from the left for reverse indices in each block
+            call dgemm("N", "N", N, N, N, alpha, MATS(idx, :, :), N, SEQ(j, :, :), N, beta, TMP, N)
+            SEQ(j, :, :) = TMP
+        end do
     end do
 
 end subroutine matrix_product_sequence_0beta
 
 
-subroutine matrix_product_sequence_beta0(L, N, MATS, S, SEQS, T)
+
+subroutine matrix_product_sequence_beta0(L, N, MATS, S, SEQ, t)
 
     implicit none
 
-    integer :: L, N, S, K, T
-    double precision, dimension(*) :: MATS(L, N, N)
-    double precision, dimension(*) :: SEQS(S, N, N)
-    double precision, dimension(*) :: TMP(N, N), C(N, N)
-    integer, dimension(*) :: INDICES(L)
-    integer :: i, j, i0, i1
+    integer, intent(in) :: N, L, S, t
+    double precision, dimension(*), intent(in) :: MATS(L, N, N)
+    double precision, dimension(*), intent(inout) :: SEQ(S, N, N)
+    double precision, dimension(*) :: TMP(N, N)
+    integer LEN
+    integer i, j, i0, idx, k
+    double precision :: alpha, beta
 
-    ! Number of elements in each matrix product
-    K = int(L / S)
-    ! Build shifted index array
-    do i=1, L
-        j = i + T - 1
-        if (j > L) j = modulo(j, L)
-        INDICES(i) = j
-    end do
-    ! Multiply products and store in Sequence
-    do i=1, S
-        i0 = ((i-1) * K) + 1
-        i1 = i * K
-        i0 = i1-K+1
-        TMP(:, :) = MATS(INDICES(i0), :, :)
-        do j = i0+1, i1
-            T = INDICES(j)
-            call dgemm("N", "N", N, N, N, 1.d0, TMP, N, MATS(T, :, :), N, 0.d0, C, N)
-            TMP = C
+    alpha = 1.d0
+    beta = 0.d0
+    LEN = int(L / S)
+
+    do j=1, S
+        i0 = (t + (j-1) * LEN)
+        if (i0 > L) i0 = i0 - L
+        ! First matrix
+        k = S-j+1
+        SEQ(k, :, :) = MATS(i0, :, :)
+
+        do i=i0 + 1, i0 + LEN - 1
+            idx = i
+            if (idx > L) idx = idx - L
+            ! Multiply next matrix from the right for normal indices in each block
+            call dgemm("N", "N", N, N, N, alpha, SEQ(k, :, :), N, MATS(idx, :, :), N, beta, TMP, N)
+            SEQ(k, :, :) = TMP
         end do
-        SEQS(S-i+1, :, :) = TMP(:, :)
     end do
 
 end subroutine matrix_product_sequence_beta0
+
 
 
 subroutine timeflow_map(L, N, TSM, Q, D, T, TAU, LWORK, INFO)
