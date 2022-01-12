@@ -195,6 +195,8 @@ class DQMC:
         # Measurement data
         # ----------------
         num_sites = self.config.shape[0]
+        self.gf_up = np.zeros_like(gf_up)
+        self.gf_dn = np.zeros_like(gf_dn)
         self.n_up = np.zeros(num_sites, dtype=np.float64)
         self.n_dn = np.zeros(num_sites, dtype=np.float64)
         self.n_double = np.zeros(num_sites, dtype=np.float64)
@@ -256,11 +258,23 @@ class DQMC:
             self._gf_up,
             self._gf_dn,
             self._sgndet,
+            self.gf_up,
+            self.gf_dn,
             self.n_up,
             self.n_dn,
             self.n_double,
             self.local_moment
         )
+
+    def normalize_measurements(self, sweeps, out):
+        self.gf_up /= sweeps
+        self.gf_dn /= sweeps
+        self.n_up /= sweeps
+        self.n_dn /= sweeps
+        self.n_double /= sweeps
+        self.local_moment /= sweeps
+        out /= sweeps
+        return out
 
     def warmup(self, sweeps):
         self.it = 0
@@ -281,12 +295,8 @@ class DQMC:
                 gf_up, gf_dn = self.get_greens()
                 out += callback(gf_up, gf_dn, *args, **kwargs)
             self.it += 1
-        # Normalize observables
-        self.n_up /= sweeps
-        self.n_dn /= sweeps
-        self.n_double /= sweeps
-        self.local_moment /= sweeps
-        out /= sweeps
+
+        out = self.normalize_measurements(sweeps, out)
         return out
 
     def simulate(self, num_equil, num_sampl, callback=None, *args, **kwargs):
@@ -335,7 +345,9 @@ def run_dqmc(p, callback=None):
         extra_results = dqmc.simulate(p.num_equil, p.num_sampl, callback=callback)
     except np.linalg.LinAlgError:
         return ()
-    return dqmc.n_up, dqmc.n_dn, dqmc.n_double, dqmc.local_moment, extra_results
+    results = [dqmc.gf_up, dqmc.gf_dn, dqmc.n_up, dqmc.n_dn, dqmc.n_double,
+               dqmc.local_moment, extra_results]
+    return results
 
 
 def log_parameters(p):
@@ -361,10 +373,10 @@ def log_parameters(p):
 
 
 def log_results(*results):
-    n_up = np.mean(results[0])
-    n_dn = np.mean(results[1])
-    n_double = np.mean(results[2])
-    local_moment = np.mean(results[3])
+    n_up = np.mean(results[2])
+    n_dn = np.mean(results[3])
+    n_double = np.mean(results[4])
+    local_moment = np.mean(results[5])
 
     logger.info("_" * 60)
     logger.info("Simulation results")
@@ -374,6 +386,6 @@ def log_results(*results):
     logger.info(" Spin-down density: %8.4f", n_dn)
     logger.info("  Double occupancy: %8.4f", n_double)
     logger.info("      Local moment: %8.4f", local_moment)
-    if results[4]:
+    if results[6]:
         logger.info("   Callback results: %s", results[4])
     logger.info("")

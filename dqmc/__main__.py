@@ -96,7 +96,7 @@ def parse_args(argv=None):
 
 
 def main():
-    plotable = ["nup", "ndn", "n2", "moment"]
+    plotable = ["", "", "nup", "ndn", "n2", "moment"]
     ylabels = {
         "nup": r"$\langle n_↑ \rangle$",
         "ndn": r"$\langle n_↓ \rangle$",

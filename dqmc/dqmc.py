@@ -887,27 +887,33 @@ def dqmc_iteration(expk, nu, config, bmats_up, bmats_dn, gf_up, gf_dn, sgndet, l
 
 
 @njit(
-    (gmat_t, gmat_t, int64[::1], float64[:], float64[:], float64[:], float64[:]),
+    (gmat_t, gmat_t, int64[::1], gmat_t, gmat_t, float64[:], float64[:],
+     float64[:], float64[:]),
     **jkwargs
 )
-def accumulate_measurements(gf_up, gf_dn, sgns, n_up, n_dn, n2, mz):
+def accumulate_measurements(gf_up, gf_dn, sgns, gfout_up, gfout_dn, n_up, n_dn,
+                            n_dbl, moment):
     """Acummulate (unnormalized) equal time measurements of observables.
 
     Parameters
     ----------
     gf_up : (N, N) np.ndarray
-        The spin-up Green's function matrix :math:`G_↑`.
+        The current spin-up Green's function matrix :math:`G_↑`.
     gf_dn : (N, N) np.ndarray
-        The spin-down Green's function matrix :math:`G_↓`.
+        The current spin-down Green's function matrix :math:`G_↓`.
     sgns : (2,) np.ndarray
         The sign of the determinant of the Green's function of both spins.
+    gfout_up : (N, N) np.ndarray
+        The output spin-up Green's function matrix :math:`G_↑`.
+    gfout_dn : (N, N) np.ndarray
+        The output spin-down Green's function matrix :math:`G_↓`.
     n_up : (N,) np.ndarray
         The output array of the spin-up occupation :math:`<n_↑>`.
     n_dn : (N,) np.ndarray
         The output array of the spin-down occupation :math:`<n_↓>`.
-    n2 : (N,) np.ndarray
+    n_dbl : (N,) np.ndarray
         The output array of the double occupation :math:`<n_↑ n_↓>`.
-    mz : (N,) np.ndarray
+    moment : (N,) np.ndarray
         The output array of the local moment :math:`<m_z^2>`.
 
     Notes
@@ -925,7 +931,9 @@ def accumulate_measurements(gf_up, gf_dn, sgns, n_up, n_dn, n2, mz):
     _n_double = _n_up * _n_dn
     _moment = _n_up + _n_dn - 2 * _n_double
 
+    gfout_up += gf_up * signfac
+    gfout_dn += gf_dn * signfac
     n_up += _n_up * signfac
     n_dn += _n_dn * signfac
-    n2 += _n_double * signfac
-    mz += _moment * signfac
+    n_dbl += _n_double * signfac
+    moment += _moment * signfac
