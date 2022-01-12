@@ -164,7 +164,7 @@ results = dqmc.simulate(warmup, measure, callback=mfuncs.occupation)
 The `simulate`-method measures the observables
 - `gf_up`:
    The spin-up Green's function `<G_↑>`.
-- `gf_up`:
+- `gf_dn`:
    The spin-up Green's function `<G_↓>`.
 - `n_up`:
    The spin-up occupation `<n_↑>`.
@@ -174,7 +174,8 @@ The `simulate`-method measures the observables
    The double occupation `<n_↑ n_↓>`.
 - `local_moment`:
    The local moment `<n_↑> + <n_↓> - 2 <n_↑ n_↓>`.
-
+- `out`:
+   The result of the user callback (returns `0` if no callback is passed)
 
 Additionally, the `simulate`-method has a `callback` parameter for measuring observables, which
 expects a method of the form
