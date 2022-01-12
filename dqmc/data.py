@@ -98,14 +98,27 @@ class Database:
                 groups.append(item)
         return groups
 
-    def get_results(self, kwargs):
-        group = self.get_simulation_group(kwargs)
-        if group is None or len(group) == 0:
-            return list()
-        results = [np.array(group[k]) for k in group]
-        return results
+    def find_missing(self, params, overwrite=False):
+        if overwrite:
+            return list(params)
+        missing_params = list()
+        for p in params:
+            res = self.get_results(p)
+            if not res:
+                missing_params.append(p)
+        return missing_params
 
-    def save_results(self, kwargs, results):
+    def get_results(self, *params):
+        results = list()
+        for param in params:
+            group = self.get_simulation_group(param)
+            if group is None or len(group) == 0:
+                return list()
+            res = [np.array(group[k]) for k in group]
+            results.append(res)
+        return results[0] if len(params) == 1 else results
+
+    def save_results(self, kwargs: Union[dict, Parameters], results):
         if isinstance(kwargs, Parameters):
             kwargs = kwargs.__dict__
         group = self.create_simulation_group(kwargs)
@@ -131,38 +144,131 @@ class Database:
         return string
 
 
-def compute_dataset(data, p):
-    results = data.get_results(p)
+def compute_dataset(db, p):
+    results = db.get_results(p)
     if not results:
         results = run_dqmc(p)
-        data.save_results(p, results)
+        db.save_results(p, results)
     return results
 
 
-def compute_datasets(data, params, max_workers=None, batch=None, callback=None,
-                     progress=True, overwrite=False):
-    # Check which datasets allready exist
-    com_params = list()
-    for p in params:
-        res = data.get_results(p)
-        if overwrite or not res:
-            com_params.append(p)
-    # Compute missing datasets in parallel
-    if com_params:
-        logger.info("Computing %s datasets", len(com_params))
-        max_workers = get_max_workers(max_workers)
+def compute_datasets(db, params, max_workers=None, batch_size=None, callback=None,
+                     progress=True, header=None):
+    """Runs multiple DQMC simulations in parallel and stores the results in a database.
 
-        if batch is None or batch == 0:
-            batch = len(com_params)
-        for i in range(0, len(com_params), batch):
-            batch_params = com_params[i:i + batch]
-            results = run_dqmc_parallel(batch_params, callback, max_workers, progress)
-            for p, res in zip(batch_params, results):
-                data.save_results(p, res)
+    Parameters
+    ----------
+    db : Database
+        The database instance used to store the DQMC simulation results.
+    params : Iterable of Parameters
+        The input parameters to map to the processes. The hash of the parameters
+        are used as a key to store the results of the DQMC simulation in the database.
+        The list of the returned results preserves the input order of the parameters.
+    callback : callable, optional
+        A optional callback method for measuring additional observables.
+    max_workers : int, optional
+        The number of processes to use (see `get_max_workers`). If `None` or `0`
+        the number of logical cores of the system is used. If a negative integer
+        is passed it is subtracted from the number of logical cores. For example,
+        `max_workers=-1` uses the number of cores minus one as number of processes.
+    batch_size : int, optional
+        The number of results that are computed in one batch before saving the
+        results to the database. Should not be less than the number of processes used.
+        If `None` all simulations are run in a single batch, if `0` the batch
+        size is set to the number of processes.
+    progress : bool, optional
+        If `True` a progresss bar is printed.
+    header : str, optional
+        A header for printing the progress bar. Ignored if `progress=False`.
+    Returns
+    -------
+    results : List
+        The results of the DQMC simulations in the order of the input parameters.
+    """
+    if not params:
+        return
+
+    # Get number of processes here to use for calculation of batch size
+    max_workers = get_max_workers(max_workers)
+    if batch_size is None:
+        batch_size = len(params)
+    elif batch_size == 0:
+        batch_size = max_workers
+
+    # Warn if batch size to small
+    if batch_size < max_workers:
+        logger.warning("Batch size `%s` is lower than the number of processes `%s`",
+                       batch_size, max_workers)
+
+    # Run simulations and store after each batch
+    num_params = len(params)
+    num_batches = int(np.ceil(num_params / batch_size))
+    desc = None
+    for batch, i in enumerate(range(0, len(params), batch_size)):
+        # Get params of batch
+        batch_params = params[i:i + batch_size]
+        # Format header if given
+        if header is not None:
+            desc = header
+            if batch_size != num_params:
+                desc += f" {batch + 1}/{num_batches}"
+        # Run DQMC simulations
+        results = run_dqmc_parallel(batch_params, callback, max_workers, progress, desc)
+        # Save results to database
+        for p, res in zip(batch_params, results):
+            db.save_results(p, res)
 
     # Get all results
-    results = list()
-    for p in params:
-        res = data.get_results(p)
-        results.append(res)
-    return results
+    return db.get_results(*params)
+
+
+def update_datasets(db, params, max_workers=None, batch_size=None, callback=None,
+                    overwrite=False, progress=True, header=None):
+    """Updates the database to contain all results of the passed simulation parameters.
+
+    Checks which datasets are missing in the database and computes the missing results
+    of DQMC simulations in parallel and stores them in the database.
+
+    Parameters
+    ----------
+    db : Database
+        The database instance used to store the DQMC simulation results.
+    params : Iterable of Parameters
+        The input parameters to map to the processes. The hash of the parameters
+        are used as a key to store the results of the DQMC simulation in the database.
+        The list of the returned results preserves the input order of the parameters.
+    callback : callable, optional
+        A optional callback method for measuring additional observables.
+    max_workers : int, optional
+        The number of processes to use (see `get_max_workers`). If `None` or `0`
+        the number of logical cores of the system is used. If a negative integer
+        is passed it is subtracted from the number of logical cores. For example,
+        `max_workers=-1` uses the number of cores minus one as number of processes.
+    batch_size : int, optional
+        The number of results that are computed in one batch before saving the
+        results to the database. Should not be less than the number of processes used.
+        If `None` or `0` all simulations are run in a single batch, if `1` the batch
+        size is set to the number of processes.
+    overwrite : bool, optional
+        If `True`, existing datasets are overwritten and all simulations are run.
+    progress : bool, optional
+        If `True` a progresss bar is printed.
+    header : str, optional
+        A header for printing the progress bar. Ignored if `progress=False`.
+    Returns
+    -------
+    results : List
+        The results of the DQMC simulations in the order of the input parameters.
+
+    See Also
+    --------
+    compute_datasets : Runs DQMC simulations and stores the results in the database.
+    """
+    # Check which datasets allready exist
+    missing = db.find_missing(params, overwrite)
+    # Compute missing datasets and store in database
+    if missing:
+        compute_datasets(db, missing, max_workers, batch_size, callback, progress,
+                         header)
+    # Get all results (existing and new) from the database
+    return db.get_results(*params)
