@@ -98,7 +98,7 @@ def parse(file):
     sampl_recomp = 1
     prod_len = 1
 
-    logger.info("Reading file %s...", file)
+    logger.info("Parsing parameters from file %s...", file)
     with open(file, "r") as fh:
         text = fh.read()
     lines = text.splitlines(keepends=False)
