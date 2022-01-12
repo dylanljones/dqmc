@@ -70,3 +70,85 @@ subroutine construct_greens(N, Q, D, T, G, TAU, SIGN, LOGDET, LWORK, INFO)
     call dgetrs("N", N, N, T, N, JPVT, G, N, INFO)
 
 end subroutine construct_greens
+
+
+subroutine update_greens(L, N, NU, CONFIG, G_UP, G_DN, i, t)
+
+    implicit none
+
+    integer, intent(in) :: N, L
+    double precision, intent(in) :: NU
+    integer, dimension(*), intent(in) :: CONFIG(N, L)
+    double precision, dimension(*), intent(inout) :: G_UP(N, N), G_DN(N, N)
+    integer, intent(in) :: i, t
+    double precision :: tmp, alpha, ONE
+    double precision, dimension(*) :: U(N), W(N)
+
+    ONE = 1.d0
+    tmp = exp(-2.d0 * NU * CONFIG(i, t))
+
+    ! Spin-up
+    alpha = tmp - ONE
+    ! Copy i-th column of GF and form (G-I) e_i
+    U(:) = G_UP(:, i)
+    U(i) = U(i) - ONE
+    ! Copy i-th row of GF
+    W(:) = G_UP(i, :)
+    ! Compute G = a U W^T + G
+    call dger(N, N, alpha / (ONE - alpha * U(i)), U, 1, W, 1, G_UP, N)
+
+    ! Spin-down
+    alpha = (1 / tmp) - ONE
+    ! Copy i-th column of GF and form (G-I) e_i
+    U(:) = G_DN(:, i)
+    U(i) = U(i) - ONE
+    ! Copy i-th row of GF
+    W(:) = G_DN(i, :)
+    ! Compute G = a U W^T + G
+    call dger(N, N, alpha / (ONE - alpha * U(i)), U, 1, W, 1, G_DN, N)
+
+end subroutine update_greens
+
+
+
+subroutine wrap_up_greens(L, N, BMATS, BMATS_INV, G, t)
+
+    implicit none
+
+    integer, intent(in) :: N, L
+    double precision, dimension(*), intent(in) :: BMATS(L, N, N), BMATS_INV(L, N, N)
+    double precision, dimension(*), intent(inout) :: G(N, N)
+    integer, intent(in) :: t
+    double precision, dimension(*) :: TMP(N, N)
+    double precision :: alpha, beta
+
+    alpha = 1.d0
+    beta = 0.d0
+    ! Compute B * G
+    call dgemm("N", "N", N, N, N, alpha, BMATS(t, :, :), N, G, N, beta, TMP, N)
+    ! Compute (B * G) * B^{-1}
+    call dgemm("N", "N", N, N, N, alpha, TMP, N, BMATS_INV(t, :, :), N, beta, G, N)
+
+end subroutine wrap_up_greens
+
+
+
+subroutine wrap_down_greens(L, N, BMATS, BMATS_INV, G, t)
+
+    implicit none
+
+    integer, intent(in) :: N, L
+    double precision, dimension(*), intent(in) :: BMATS(L, N, N), BMATS_INV(L, N, N)
+    double precision, dimension(*), intent(inout) :: G(N, N)
+    integer, intent(in) :: t
+    double precision, dimension(*) :: TMP(N, N)
+    double precision :: alpha, beta
+
+    alpha = 1.d0
+    beta = 0.d0
+    ! Compute B^{-1} * G
+    call dgemm("N", "N", N, N, N, alpha, BMATS_INV(t-1, :, :), N, G, N, beta, TMP, N)
+    ! Compute (B^{-1} * G) * B
+    call dgemm("N", "N", N, N, N, alpha, TMP, N, BMATS(t-1, :, :), N, beta, G, N)
+
+end subroutine wrap_down_greens
