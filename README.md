@@ -180,10 +180,12 @@ The `simulate`-method measures the observables
 Additionally, the `simulate`-method has a `callback` parameter for measuring observables, which
 expects a method of the form
 ```python
-def callback(gf_up, gf_dn):
+def callback(gf_up, gf_dn, signs, *args, **kwargs):
     ...
     return result
 ```
+where `gf_up` and `gf_dn` are the spin up and down Green's functions and `signs`
+is an array of the spin up and down sign of the GF determinant after the DQMC iteration.
 The returned result must be a `np.ndarray` for ensuring correct averaging after the
 measurement sweeps. A collection of methods for measuring observables is contained
 in the `mfuncs` module.

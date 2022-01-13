@@ -293,7 +293,7 @@ class DQMC:
             # user measurement callback
             if callback is not None:
                 gf_up, gf_dn = self.get_greens()
-                out += callback(gf_up, gf_dn, *args, **kwargs)
+                out += callback(gf_up, gf_dn, self._sgndet, *args, **kwargs)
             self.it += 1
 
         out = self.normalize_measurements(sweeps, out)

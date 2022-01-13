@@ -107,8 +107,10 @@ def init_qmc(model, num_timesteps, seed):
     if check > 0.1:
         dt_max = math.sqrt(0.1 / (model.u * model.hop))
         num_times_min = math.ceil(model.beta / dt_max)
-        logger.warning("Check-value %.2f should be <0.1!", check)
-        logger.warning("Increase number of time steps to >%s", num_times_min)
+        logger.warning(
+            "Check-value %.2f should be <0.1, increase number of time steps to >%s!",
+            check, num_times_min
+        )
     else:
         logger.debug("Check-value %.4f is <0.1!", check)
 
