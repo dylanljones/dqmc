@@ -8,8 +8,9 @@
 # LICENSE file in the root directory and this permission notice shall
 # be included in all copies or substantial portions of the Software.
 
-from setuptools import setup, find_packages
+from setuptools import find_packages
 import versioneer
+from numpy.distutils.core import setup, Extension
 
 
 def requirements():
@@ -22,18 +23,27 @@ def long_description():
         return f.read()
 
 
+ext_modules = [
+    Extension(name="dqmc.src.timeflow", sources=["dqmc/src/timeflow.f90"],
+              libraries=["lapack", "blas"], f2py_options=["--quiet"]),
+    Extension(name="dqmc.src.greens", sources=["dqmc/src/greens.f90"],
+              libraries=["lapack", "blas"], f2py_options=['--quiet'])
+]
+
+
 setup(
-    name='dqmc',
+    name="dqmc",
     version=versioneer.get_version(),
     cmdclass=versioneer.get_cmdclass(),
-    author='Dylan Jones',
-    author_email='dylanljones94@gmail.com',
-    description='Determinant Quantum Monte Carlo simulations in python',
+    author="Dylan Jones",
+    author_email="dylanljones94@gmail.com",
+    description="Determinant Quantum Monte Carlo simulations in python",
     long_description=long_description(),
     long_description_content_type="text/markdown",
-    url='https://github.com/dylanljones/dqmc',
+    url="https://github.com/dylanljones/dqmc",
     packages=find_packages(),
-    license='MIT License',
+    ext_modules=ext_modules,
+    license="MIT License",
     install_requires=requirements(),
-    python_requires='>=3.6',
+    python_requires=">=3.6",
 )
