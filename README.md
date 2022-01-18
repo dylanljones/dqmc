@@ -1,4 +1,6 @@
 # DQMC
+[![Build](https://github.com/dylanljones/dqmc/actions/workflows/build.yml/badge.svg)](https://github.com/dylanljones/dqmc/actions/workflows/build.yml)
+[![Tests](https://github.com/dylanljones/dqmc/actions/workflows/test-all-master.yml/badge.svg)](https://github.com/dylanljones/dqmc/actions/workflows/test-all-master.yml)
 
 ![GitHub tag (latest by date)](https://img.shields.io/github/v/tag/dylanljones/dqmc)
 ![GitHub license](https://img.shields.io/github/license/dylanljones/dqmc)
