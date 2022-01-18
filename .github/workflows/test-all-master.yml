@@ -14,7 +14,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest]
-        python-version: ["3.7", "3.10"]  # check oldest and latest supported version
+        python-version: ["3.7", "3.9"]  # check oldest and latest supported version
         other-os: [false]
 
     runs-on: ${{ matrix.os }}
