@@ -164,11 +164,16 @@ def test_update(u, mu, beta, num_sites, num_times, i, t):
     assert_equal(bmats_dn_new, bmats_dn)
 
 
-@given(st_u, st_mu, st_beta, st_nsites, st_ntimes, st_i, st_t)
+@given(st.floats(0.1, 6), st_mu, st_beta, st_nsites, st_ntimes, st_i, st_t)
 def test_compute_acceptance_fast(u, mu, beta, num_sites, num_times, i, t):
-    prod_len = 2
+    """Test computation of fast acceptance ratio.
+
+    Instabilities grow with U, so limit maximum U to prevent too big instabilities
+    in non-stabilized method.
+    """
+    prod_len = 0
     assume((i < num_sites) and (t < num_times))
-    assume(num_times % prod_len == 0)
+    assume(prod_len == 0 or num_times % prod_len == 0)
     expk, nu, config, bmats_up, bmats_dn = _init(num_sites, num_times, u, mu, beta)
     gf_up, gf_dn, sgns, logdet = _greens(bmats_up, bmats_dn, t, prod_len)
 
@@ -182,6 +187,8 @@ def test_compute_acceptance_fast(u, mu, beta, num_sites, num_times, i, t):
     except la.LinAlgError:
         assume(False)
     old_det = abs(det_up * det_dn)
+    assume(old_det != 0)
+
     # Flip spin
     dqmc.update(expk, nu, config, bmats_up, bmats_dn, i, t)
     # Compute acceptance ratio

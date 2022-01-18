@@ -72,7 +72,7 @@ for more information.
 - `t`
    The hopping energy of the Hubbard model.
 - `mu`
-   The chemical potential of the Hubbard model. Set to `U/2` for half filling.
+   The chemical potential of the Hubbard model. Set to `0` for half filling.
 - `dt` (optional)
    The imaginary time step size.
 - `beta` (optional)
