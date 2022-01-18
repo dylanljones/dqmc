@@ -194,21 +194,6 @@ def test_compute_acceptance_fast(u, mu, beta, num_sites, num_times, i, t):
     assert abs(d_slow - d) < 0.05
 
 
-# def test_compute_greens():
-#     pass
-
-
-def _max_diff(actual, desired):
-    diff = np.abs(actual - desired)
-    idx_diff = np.array(np.where(diff != 0.0)).T
-    num_diff = len(idx_diff)
-    diff_rel = diff / abs(desired)
-    max_diff = np.max(diff)
-    max_diff_rel = np.max(diff_rel)
-
-    return num_diff / desired.size
-
-
 @given(st_u, st_mu, st_beta, st_nsites, st_ntimes, st_t, st_nprod)
 def test_compute_greens_stable(u, mu, beta, num_sites, num_times, t, prod_len):
     assume(num_times % prod_len == 0)
@@ -220,7 +205,7 @@ def test_compute_greens_stable(u, mu, beta, num_sites, num_times, t, prod_len):
     # Compute stable Green's function of time slice `t`
     gf_up, gf_dn, sgn, det = _greens(bmats_up, bmats_dn, t, prod_len)
     rtol = 0.5
-    _max_diff(gf_up, gf_up_ref)
+
     assert_gf_equal(gf_up, gf_up_ref, atol=0.05, rtol=rtol)
     assert_gf_equal(gf_dn, gf_dn_ref, atol=0.05, rtol=rtol)
     assert_equal(sgn_ref, sgn)
