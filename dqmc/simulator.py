@@ -71,7 +71,7 @@ class Parameters:
         self.dt = 1 / (temp * self.num_timesteps)
 
 
-def parse(file):
+def parse(file):  # noqa: C901
     """Parses an input text file and extracts the DQMC parameters.
 
     Parameters
