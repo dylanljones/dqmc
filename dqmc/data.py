@@ -8,6 +8,8 @@
 # LICENSE file in the root directory and this permission notice shall
 # be included in all copies or substantial portions of the Software.
 
+"""Database for DQMC simulation results."""
+
 import h5py
 import hashlib
 import logging
