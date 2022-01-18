@@ -33,17 +33,17 @@ logger = logging.getLogger("dqmc")
 class Parameters:
 
     shape: Union[int, tuple]
-    u: float
-    eps: float
-    t: float
-    mu: float
-    dt: float
-    num_timesteps: int
+    u: float = 0.0
+    eps: float = 0.0
+    t: float = 1.0
+    mu: float = 0.
+    dt: float = 0.01
+    num_timesteps: int = 40
     num_equil: int = 512
     num_sampl: int = 2048
     num_wraps: int = 1
-    sampl_recomp: int = 1
     prod_len: int = 1
+    sampl_recomp: int = 1
     seed: int = 0
 
     def copy(self, **kwargs):
@@ -293,7 +293,7 @@ class DQMC:
             # user measurement callback
             if callback is not None:
                 gf_up, gf_dn = self.get_greens()
-                out += callback(gf_up, gf_dn, *args, **kwargs)
+                out += callback(gf_up, gf_dn, self._sgndet, *args, **kwargs)
             self.it += 1
 
         out = self.normalize_measurements(sweeps, out)

@@ -92,9 +92,29 @@ def get_max_workers(max_workers=None):
     return max_workers
 
 
+def transpose_results(results):
+    """Transposes a list of arrays."""
+    tresults = [list() for _ in range(len(results[0]))]
+    num_res = len(tresults)
+    for res in results:
+        for i in range(num_res):
+            tresults[i].append(res[i])
+
+    # Last result is user callback, so not guaranted to be convertible to np.array
+    out = [np.array(x) for x in tresults[:-1]]
+    last = tresults[-1]
+    try:
+        last = np.array(last)
+    except Exception:  # noqa
+        pass
+    out.append(last)
+
+    return out
+
+
 # noinspection PyShadowingNames
 def run_dqmc_parallel(params, callback=None, max_workers=None, progress=True,
-                      header=None):
+                      header=None, transpose=False):
     """Runs multiple DQMC simulations in parallel.
 
     Parameters
@@ -113,6 +133,9 @@ def run_dqmc_parallel(params, callback=None, max_workers=None, progress=True,
         If `True` a progresss bar is printed.
     header : str, optional
         A header for printing the progress bar. Ignored if `progress=False`.
+    transpose : bool, optional
+        If `True`, the list of results is transposed and cast to `np.ndarray`, such
+        that the first index corresponds to the observable.
 
     Returns
     -------
@@ -136,6 +159,8 @@ def run_dqmc_parallel(params, callback=None, max_workers=None, progress=True,
     with concurrent.futures.ProcessPoolExecutor(max_workers) as executor:
         results = executor.map(run_dqmc, *zip(*args))
         if progress:
-            return list(tqdm(results, total=len(args), desc=header))
+            results = list(tqdm(results, total=len(args), desc=header))
         else:
-            return list(results)
+            results = list(results)
+
+    return transpose_results(results) if transpose else results

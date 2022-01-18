@@ -54,7 +54,11 @@ jkwargs = dict(nogil=True, fastmath=True, cache=True)
 
 
 def init_configuration(num_sites: int, num_timesteps: int) -> np.ndarray:
-    """Initializes the configuration array with a random distribution of `-1` and `+1`.
+    """Initializes the Hubbard-Stratonovich field for the DQMC simulation.
+
+    The 'Hubbard-Stratonovich field' (also called the 'configuration') is an
+    auxilliary field of spins, represented by an array filled with a
+    random distribution of `-1` (spin down) and `+1` (spin up).
 
     Parameters
     ----------
@@ -73,14 +77,23 @@ def init_configuration(num_sites: int, num_timesteps: int) -> np.ndarray:
     return config
 
 
-def init_qmc(model, num_timesteps, seed):
-    r"""Initializes configuration and static variables of the QMC algorithm.
+def init_qmc(model, num_times, seed):
+    r"""Initializes the configuration and static variables of the QMC algorithm.
+
+    Initializes the main quantities used in the DQMC simulations. The regular and
+    inverse matrix exponentials of the non-interacting Hamiltonian :math:'e^{Δτ H_0}'
+    as well as the parameter :math:'ν', defined by
+    .. math::
+        \cosh(ν) = e^{U Δτ / 2},
+
+    are constant and are reused throughout the simulation. Additionally, the
+    Hubbard-Stratonovich field is initialized with random values.
 
     Parameters
     ----------
     model : HubbardModel
         The model instance.
-    num_timesteps : int
+    num_times : int
         The number of time steps `L` used in the Monte Carlo simulation.
     seed : int
         A seed to be set before creating the cinfiguration.
@@ -91,9 +104,22 @@ def init_qmc(model, num_timesteps, seed):
     expk_inv : np.ndarray
         The inverse matrix exponential of the kinetic Hamiltonian of the model.
     nu : float
-        The parameter ν defined by :math:'\cosh(ν) = e^{U Δτ / 2}'.
+        The parameter ν defined by :math:`\cosh(ν) = e^{U Δτ / 2}`.
     config : (N, L) np.ndarray
         The array representing the configuration or Hubbard-Stratonovich field.
+
+    Notes
+    -----
+    In order to ensure good simulation results, the length of each imaginary
+    time slice :math:`Δτ` should be chosen such that
+    .. math::
+        t U (Δτ)^2 < 1 / 10
+
+    If the number of imaginary time steps `num_times` is set to low a warning is given.
+
+    See Also
+    --------
+    init_configuration : Initializes the Hubbard-Stratonovich field.
     """
 
     np.random.seed(seed)
@@ -102,13 +128,15 @@ def init_qmc(model, num_timesteps, seed):
     ham_k = model.hamiltonian_kinetic()
 
     # Compute and check time step size
-    dtau = model.beta / num_timesteps
+    dtau = model.beta / num_times
     check = model.u * model.hop * dtau ** 2
     if check > 0.1:
         dt_max = math.sqrt(0.1 / (model.u * model.hop))
         num_times_min = math.ceil(model.beta / dt_max)
-        logger.warning("Check-value %.2f should be <0.1!", check)
-        logger.warning("Increase number of time steps to >%s", num_times_min)
+        logger.warning(
+            "Check-value %.2f should be <0.1, increase number of time steps to >%s!",
+            check, num_times_min
+        )
     else:
         logger.debug("Check-value %.4f is <0.1!", check)
 
@@ -122,7 +150,7 @@ def init_qmc(model, num_timesteps, seed):
     logger.debug("max(e^k)=%s", np.max(expk))
 
     # Initialize configuration with random -1 and +1
-    config = init_configuration(model.num_sites, num_timesteps)
+    config = init_configuration(model.num_sites, num_times)
     prop_pos = len(np.where(config == +1)[0]) / config.size
     prop_neg = len(np.where(config == -1)[0]) / config.size
     logger.debug("config: p+=%s p-=%s", prop_pos, prop_neg)
@@ -137,7 +165,13 @@ def init_qmc(model, num_timesteps, seed):
 
 @njit(float64[:, ::1](expk_t, float64, conf_t, int64, int64), **jkwargs)
 def compute_timestep_mat(expk, nu, config, t, sigma):
-    r"""Computes the time step matrix :math:'B_σ(h_t)'.
+    r"""Computes the time step matrix :math:`B_σ(h_t)`.
+
+    The time step matrix :math:'B_σ(h_t)' is defined as
+    .. math::
+        B_σ(h_t) = e^{Δτ H_0} e^{σ ν V_t(h_t)},
+
+    where the first term is the matrix exponential of the non-interacting Hamiltonian.
 
     Parameters
     ----------
@@ -158,23 +192,29 @@ def compute_timestep_mat(expk, nu, config, t, sigma):
 
     Notes
     -----
-    The time step matrix :math:'B_σ(h_t)' is defined as
-    ..math::
-        B_σ(h_t) = e^k e^{σ ν V_t(h_t)}
+    The time step matrix :math:'B_σ(h_t)' can be computed by scaling the rows
+    of the matrix exponential of the non-interacting Hamiltonian with the exponential
+    of the interaction matrix.
     """
     return expk * np.exp(sigma * nu * config[:, t])
 
 
 @njit(float64[:, ::1](expk_t, float64, conf_t, int64, int64), **jkwargs)
 def compute_timestep_mat_inv(expk_inv, nu, config, t, sigma):
-    r"""Computes the inverse time step matrix :math:'B_σ(h_t)^{-1}'.
+    r"""Computes the inverse time step matrix :math:`B_σ(h_t)^{-1}`.
+
+    The time step matrix :math:`B_σ(h_t)^{-1}` is defined as
+    .. math::
+        B_σ(h_t)^{-1} = [e^{Δτ H_0} e^{σ ν V_t(h_t)}]^{-1},
+
+    where the first term is the matrix exponential of the non-interacting Hamiltonian.
 
     Parameters
     ----------
     expk_inv : (N, N) np.ndarray
         The inverse matrix exponential of the kinetic hamiltonian.
     nu : float
-        The parameter ν defined by :math:'\cosh(ν) = e^{U Δτ / 2}'
+        The parameter ν defined by :math:`\cosh(ν) = e^{U Δτ / 2}`
     config : (N, L) np.ndarray
         The configuration or Hubbard-Stratonovich field.
     t : int
@@ -184,14 +224,15 @@ def compute_timestep_mat_inv(expk_inv, nu, config, t, sigma):
     Returns
     -------
     b_inv : (N, N) np.ndarray
-        The matrix :math:'B_{t, σ}(h_t)^{-1}'.
+        The matrix :math:`B_{t, σ}(h_t)^{-1}`.
 
     Notes
     -----
     The inverse time step matrix :math:'B_σ(h_t)^{-1}' can be computed scaling the
     inverse matrix exponential of the kinetic hamiltonian:
     ..math::
-        B_σ(h_t)^{-1} = [e^k e^{σ ν V_t(h_t)}]^{-1} = [e^k]^{-1} e^{-σ ν V_t(h_t)}
+        B_σ(h_t)^{-1} = [e^{Δτ H_0} e^{σ ν V_t(h_t)}]^{-1}
+        = [e^{Δτ H_0}]^{-1} e^{-σ ν V_t(h_t)}
     """
     tmp = np.zeros((config.shape[0], 1), dtype=np.float64)
     tmp[:, 0] = np.exp(-sigma * nu * config[:, t])
@@ -200,14 +241,14 @@ def compute_timestep_mat_inv(expk_inv, nu, config, t, sigma):
 
 @njit(nt.UniTuple(bmat_t, 2)(expk_t, float64, conf_t), **jkwargs)
 def compute_timestep_mats(expk, nu, config):
-    r"""Computes the time step matrices :math:'B_σ(h_t)' for all times and both spins.
+    r"""Computes the time step matrices :math:`B_σ(h_t)` for all times and both spins.
 
     Parameters
     ----------
     expk : (N, N) np.ndarray
         The matrix exponential of the kinetic hamiltonian.
     nu : float
-        The parameter ν defined by :math:'\cosh(ν) = e^{U Δτ / 2}'
+        The parameter ν defined by :math:`\cosh(ν) = e^{U Δτ / 2}`.
     config : (N, L) np.ndarray
         The configuration or Hubbard-Stratonovich field.
     Returns
@@ -220,12 +261,6 @@ def compute_timestep_mats(expk, nu, config):
     See Also
     --------
     compute_timestep_mat : Computation of the individual time step matrices.
-
-    Notes
-    -----
-    The time step matrix :math:'B_σ(h_t)' is defined as
-    ..math::
-        B_σ(h_t) = e^k e^{σ ν V_t(h_t)}
     """
     num_sites, num_timesteps = config.shape
     bmats_up = np.zeros((num_timesteps, num_sites, num_sites), dtype=np.float64)
@@ -238,14 +273,14 @@ def compute_timestep_mats(expk, nu, config):
 
 @njit(nt.UniTuple(bmat_t, 2)(expk_t, float64, conf_t), **jkwargs)
 def compute_timestep_mats_inv(expk_inv, nu, config):
-    r"""Computes the inverse of the time step matrices :math:'B_σ(h_t)^{-1}'.
+    r"""Computes the inverse of the time step matrices :math:`B_σ(h_t)^{-1}`.
 
     Parameters
     ----------
     expk_inv : (N, N) np.ndarray
         The inverse matrix exponential of the kinetic hamiltonian.
     nu : float
-        The parameter ν defined by :math:'\cosh(ν) = e^{U Δτ / 2}'
+        The parameter ν defined by :math:`\cosh(ν) = e^{U Δτ / 2}`.
     config : (N, L) np.ndarray
         The configuration or Hubbard-Stratonovich field.
     Returns
