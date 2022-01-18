@@ -201,7 +201,7 @@ num_timesteps = 100
 warmup, measure = 300, 3000
 p = Parameters(shape, u, eps, hop, mu, dt, num_timesteps, warmup, measure)
 
-n_up, n_dn, n_double, moment, occ = run_dqmc(p, callback=mfuncs.occupation)
+gf_up, gf_dn, n_up, n_dn, n_double, moment, occ = run_dqmc(p, callback=mfuncs.occupation)
 ```
 The default observables are returned first, folled by the result of the callback (`0`
 if no callback is passed).
@@ -209,7 +209,7 @@ if no callback is passed).
 ### Multiprocessing
 
 To run multiple DQMC simulations in parallel use the `run_dqmc_parallel`-method,
-which internally calls the `run_dqmc`-method. To construct a list of `Parameters`-objects
+which internally calls the `run_dqmc`-method. A list of `Parameters`-objects
 can be created via the `map_params`-method:
 
 ```python
