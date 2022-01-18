@@ -45,5 +45,15 @@ setup(
     ext_modules=ext_modules,
     license="MIT License",
     install_requires=requirements(),
-    python_requires=">=3.6",
+    python_requires=">=3.7",
+    classifiers=[
+        'Intended Audience :: Science/Research',
+        'License :: OSI Approved :: MIT License',
+        'Programming Language :: Python :: 3.7',
+        'Programming Language :: Python :: 3.8',
+        'Programming Language :: Python :: 3.9',
+        'Programming Language :: Python :: 3.10',
+        'Topic :: Scientific/Engineering :: Physics',
+    ],
+    keywords=["quantum monte carlo", "physics", "dqmc", ""],
 )
