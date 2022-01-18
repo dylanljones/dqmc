@@ -1,3 +1,6 @@
+# Include Fortran
+include *.f90
+
 # Include the requirements file
 include *.txt
 
