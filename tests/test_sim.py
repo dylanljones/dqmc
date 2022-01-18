@@ -80,7 +80,7 @@ def test_moment_tlow():
     mu = 0.0
     temp = 0.1
     p = _init(u, mu, 1 / temp, num_times=96)
-    n_up, n_dn, n_dbl, m2, _ = run_dqmc(p)
+    gf_up, gf_dn, n_up, n_dn, n_dbl, m2, _ = run_dqmc(p)
     assert_allclose(m2, np.full_like(n_up, fill_value=0.9), rtol=0.1)
 
 
