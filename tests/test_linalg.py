@@ -71,7 +71,7 @@ def test_dger_numpy(alpha, x, y, a):
 def test_mdot(matrices):
     expected = reduce(np.dot, matrices)
     result = linalg.mdot(matrices)
-    assert_allclose(result, expected, rtol=1e-10)
+    assert_allclose(result, expected, rtol=1e-10, atol=1e-10)
 
 
 @given(mat)
