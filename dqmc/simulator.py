@@ -23,8 +23,9 @@ from .dqmc import (     # noqa: F401
     compute_greens_qrd,
     init_greens,
     dqmc_iteration,
-    accumulate_measurements,
 )
+from .measurements import MeasurementData
+
 
 logger = logging.getLogger("dqmc")
 
@@ -148,7 +149,7 @@ def parse(file):  # noqa: C901
     elif num_timesteps == 0:
         num_timesteps = int(beta / dt)
     return Parameters(shape, u, eps, t, mu, dt, num_timesteps, warm, meas,
-                      num_recomp, sampl_recomp, prod_len)
+                      num_recomp, prod_len, sampl_recomp)
 
 
 class DQMC:
@@ -193,14 +194,8 @@ class DQMC:
         self._logdet = logdet
 
         # Measurement data
-        # ----------------
         num_sites = self.config.shape[0]
-        self.gf_up = np.zeros_like(gf_up)
-        self.gf_dn = np.zeros_like(gf_dn)
-        self.n_up = np.zeros(num_sites, dtype=np.float64)
-        self.n_dn = np.zeros(num_sites, dtype=np.float64)
-        self.n_double = np.zeros(num_sites, dtype=np.float64)
-        self.local_moment = np.zeros(num_sites, dtype=np.float64)
+        self.measurements = MeasurementData(num_sites)
 
     def compute_greens(self, t=0):   # noqa: F811
         if self.prod_len == 0:
@@ -252,29 +247,7 @@ class DQMC:
         if self.sampl_recomp:
             # Recompute Green's functions before measurements
             self.compute_greens()
-
-        # Accumulate measurements of default observables
-        accumulate_measurements(
-            self._gf_up,
-            self._gf_dn,
-            self._sgndet,
-            self.gf_up,
-            self.gf_dn,
-            self.n_up,
-            self.n_dn,
-            self.n_double,
-            self.local_moment
-        )
-
-    def normalize_measurements(self, sweeps, out):
-        self.gf_up /= sweeps
-        self.gf_dn /= sweeps
-        self.n_up /= sweeps
-        self.n_dn /= sweeps
-        self.n_double /= sweeps
-        self.local_moment /= sweeps
-        out /= sweeps
-        return out
+        self.measurements.accumulate(self._gf_up, self._gf_dn, self._sgndet)
 
     def warmup(self, sweeps):
         self.it = 0
@@ -295,8 +268,6 @@ class DQMC:
                 gf_up, gf_dn = self.get_greens()
                 out += callback(gf_up, gf_dn, self._sgndet, *args, **kwargs)
             self.it += 1
-
-        out = self.normalize_measurements(sweeps, out)
         return out
 
     def simulate(self, num_equil, num_sampl, callback=None, *args, **kwargs):
@@ -310,7 +281,7 @@ class DQMC:
 
         logger.info("Running %s sampling sweeps...", num_sampl)
         t0_sampl = time.perf_counter()
-        results = self.measure(num_sampl, callback, *args, **kwargs)
+        extra_results = self.measure(num_sampl, callback, *args, **kwargs)
         t_sampl = time.perf_counter() - t0_sampl
 
         t = time.perf_counter() - t0
@@ -320,7 +291,7 @@ class DQMC:
         logger.info("Equil CPU time: %6.1fs  (%.4f s/it)", t_equil, t_equil / num_equil)
         logger.info("Sampl CPU time: %6.1fs  (%.4f s/it)", t_sampl, t_sampl / num_sampl)
         logger.info("Total CPU time: %6.1fs  (%.4f s/it)", t, t / total_sweeps)
-        return results
+        return self.measurements, extra_results
 
 
 def run_dqmc(p, callback=None):
@@ -342,12 +313,13 @@ def run_dqmc(p, callback=None):
     dqmc = DQMC(model, p.num_timesteps, p.num_wraps, p.prod_len, p.seed,
                 bool(p.sampl_recomp))
     try:
-        extra_results = dqmc.simulate(p.num_equil, p.num_sampl, callback=callback)
+        results, extra = dqmc.simulate(p.num_equil, p.num_sampl, callback=callback)
     except np.linalg.LinAlgError:
         return ()
-    results = [dqmc.gf_up, dqmc.gf_dn, dqmc.n_up, dqmc.n_dn, dqmc.n_double,
-               dqmc.local_moment, extra_results]
-    return results
+    # results = [dqmc.gf_up, dqmc.gf_dn, dqmc.n_up, dqmc.n_dn, dqmc.n_double,
+    #            dqmc.local_moment, extra_results]
+    # return results
+    return *results.normalize(), extra
 
 
 def log_parameters(p):

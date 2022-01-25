@@ -1,10 +1,10 @@
 # DQMC
-[![Build](https://github.com/dylanljones/dqmc/actions/workflows/build.yml/badge.svg)](https://github.com/dylanljones/dqmc/actions/workflows/build.yml)
-[![Tests](https://github.com/dylanljones/dqmc/actions/workflows/test-all-master.yml/badge.svg)](https://github.com/dylanljones/dqmc/actions/workflows/test-all-master.yml)
 
 ![GitHub tag (latest by date)](https://img.shields.io/github/v/tag/dylanljones/dqmc)
 ![GitHub license](https://img.shields.io/github/license/dylanljones/dqmc)
-[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
+[![Build](https://github.com/dylanljones/dqmc/actions/workflows/build.yml/badge.svg)](https://github.com/dylanljones/dqmc/actions/workflows/build.yml)
+[![Tests](https://github.com/dylanljones/dqmc/actions/workflows/test-all-master.yml/badge.svg)](https://github.com/dylanljones/dqmc/actions/workflows/test-all-master.yml)
+
 
 Efficient and stable Determinant Quantum Monte Carlo (DQMC) simulations of the Hubbard model in Python.
 
@@ -161,7 +161,7 @@ warmup, measure = 300, 3000
 model = hubbard_hypercube(shape, u=4., eps=0., hop=1., mu=0., beta=1/5, periodic=True)
 
 dqmc = DQMC(model, num_timesteps, num_recomp=1, prod_len=1, seed=0)
-results = dqmc.simulate(warmup, measure, callback=mfuncs.occupation)
+results, out = dqmc.simulate(warmup, measure, callback=mfuncs.occupation)
 ```
 The `simulate`-method measures the observables
 - `gf_up`:
@@ -243,6 +243,10 @@ from the root of the repo:
 python -m black dqmc/
 pre-commit run
 `````
+or install the pre-commit hooks by running
+`````commandline
+pre-commit install
+`````
 
 ## References
 1. Z. Bai, W. Chen, R. T. Scalettar and I. Yamazaki
@@ -263,3 +267,6 @@ pre-commit run
 6. Z. Bai, C.-R. Lee, R.-C. Li and S. Xu
    "Stable solutions of linear systems involving long chain of matrix multiplications"
    Linear Algebra Appl. 435, 659-673 (2011) [DOI](https://doi.org/10.1016/j.laa.2010.06.023)
+7. C. Bauer
+   "Fast and stable determinant quantum Monte Carlo"
+   SciPost Phys. Core 2, 11 (2020) [DOI](https://doi.org/10.21468/SciPostPhysCore.2.2.011)
