@@ -13,6 +13,9 @@
 Notes
 -----
 The time slice index is called `t` instead of the `l` of the reference.
+Some methods use just in time compilation (jit) even though no speed-up is expected.
+This is done to ensure these methods can be called in other jited methods in no-python
+mode.
 
 References
 ----------
@@ -29,7 +32,7 @@ from scipy.linalg import expm, lapack
 from numba import njit, float64, int8, int64, void
 from numba import types as nt
 from .model import HubbardModel  # noqa: F401
-from .linalg import timeflow_map, matrix_product_sequence_0beta
+from .linalg import timeflow_map, matrix_product_sequence_0beta, mdot
 from .linalg import numpy_dger as dger
 
 # Try to import Fortran implementation
@@ -46,6 +49,7 @@ expk_t = float64[:, :]
 conf_t = int8[:, :]
 bmat_t = float64[:, :, ::1]
 gmat_t = float64[:, ::1]
+gtau_t = float64[:, :, ::1]
 
 UP, DN = +1, -1
 
@@ -473,7 +477,7 @@ def _construct_greens(tsm, gf):
 
 
 def compute_greens_qrd(bmats_up, bmats_dn, gf_up, gf_dn, sgndet, logdet, t, prod_len=1):
-    r"""Computes the Green's functions for both spins via ASvQRD stabilization.
+    r"""Computes and overwrites the Green's functions via ASvQRD stabilization.
 
     Parameters
     ----------
@@ -505,6 +509,30 @@ def compute_greens_qrd(bmats_up, bmats_dn, gf_up, gf_dn, sgndet, logdet, t, prod
 
 
 def init_greens(bmats_up, bmats_dn, t, prod_len=0):
+    r"""Initializes and computes the Green's functions naively.
+
+    Parameters
+    ----------
+    bmats_up : (L, N, N) np.ndarray
+        The spin-up time step matrices.
+    bmats_dn : (L, N, N) np.ndarray
+        The spin-down time step matrices.
+    t : int
+        The current time-step index :math:'t'.
+    prod_len : int
+        The number of matrices multiplied explicitly
+
+    Returns
+    -------
+    gf_up : np.ndarray
+        The spin-up Green's function.
+    gf_dn : np.ndarray
+        The spin-down Green's function.
+    sgndet : (2, ) np.ndarray
+        The signs of the determinants of the Green's functions.
+    logdet : (2, ) np.ndarray
+        The logarithm of the determinants of the Green's functions.
+    """
     num_sites = bmats_up[0].shape[0]
     shape = (num_sites, num_sites)
     sgndet = np.zeros(2, dtype=np.int64)
@@ -517,6 +545,50 @@ def init_greens(bmats_up, bmats_dn, t, prod_len=0):
     else:
         compute_greens(bmats_up, bmats_dn, gf_up, gf_dn, sgndet, logdet, t)
     return gf_up, gf_dn, sgndet, logdet
+
+
+def init_gftau(num_sites, num_times):
+    gf_up = np.zeros((num_times, num_sites, num_sites), dtype=np.float64)
+    gf_dn = np.zeros((num_times, num_sites, num_sites), dtype=np.float64)
+    return gf_up, gf_dn
+
+
+@njit(gtau_t(bmat_t, gmat_t))
+def compute_unequal_time_greens(bmats, gf0):
+    r"""Computes the unequal-time Green's function :math:'G(τ, 0)'.
+
+    Parameters
+    ----------
+    bmats : (L, N, N) np.ndarray
+        The time step matrices.
+    gf0 : (N, N) np.ndarray
+        The equal time Green's function 'G_0' for 'τ=0'.
+    Returns
+    -------
+    gf_tau0 : (L, N, N) np.ndarray
+        The unequal time Green's functions for the times 'τ=0, Δτ, ..., (L-1) Δτ'
+
+    Notes
+    -----
+    The unequal-time Green's function :math:'G(τ_1, τ_2)' for 'τ_1 > τ_2'
+    with 'τ = l Δτ'is defined as:
+    .. math::
+        G(τ_1, τ_2) = B_{l_1 - 1} ... B_{l_2} G_{l_2}
+
+    where 'G_l' is the equal time Green's function.
+    For 'τ_2 = 0' and 'τ = τ_1 > 0' this results in
+    .. math::
+        G(τ=l Δτ, 0) = B_{l-1} ... B_0 G_0
+    """
+    num_times, num_sites, _ = bmats.shape
+    gf = np.zeros((num_times, num_sites, num_sites), dtype=np.float64)
+    gf[0] += gf0
+    for t in range(1, num_times):
+        indices = np.arange(t - 1, -1, -1)
+        bmat_seq = bmats[indices]
+        bmat_prod = mdot(bmat_seq)
+        gf[t] += np.dot(bmat_prod, gf0)
+    return gf
 
 
 # =========================================================================
