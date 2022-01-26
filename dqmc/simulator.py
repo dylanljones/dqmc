@@ -188,10 +188,10 @@ class DQMC:
         # Initialization
         gf_up, gf_dn, sgndet, logdet = init_greens(self.bmats_up, self.bmats_dn,
                                                    0, self.prod_len)
-        self._gf_up = gf_up
-        self._gf_dn = gf_dn
-        self._sgndet = sgndet
-        self._logdet = logdet
+        self.gf_up = gf_up
+        self.gf_dn = gf_dn
+        self.sgndet = sgndet
+        self.logdet = logdet
 
         # Measurement data
         num_sites = self.config.shape[0]
@@ -202,26 +202,26 @@ class DQMC:
             compute_greens(
                 self.bmats_up,
                 self.bmats_dn,
-                self._gf_up,
-                self._gf_dn,
-                self._sgndet,
-                self._logdet,
+                self.gf_up,
+                self.gf_dn,
+                self.sgndet,
+                self.logdet,
                 t
             )
         else:
             compute_greens_qrd(
                 self.bmats_up,
                 self.bmats_dn,
-                self._gf_up,
-                self._gf_dn,
-                self._sgndet,
-                self._logdet,
+                self.gf_up,
+                self.gf_dn,
+                self.sgndet,
+                self.logdet,
                 t,
                 self.prod_len
             )
 
     def get_greens(self):
-        return self._gf_up, self._gf_dn
+        return self.gf_up, self.gf_dn
 
     def iteration(self):
         accepted = dqmc_iteration(
@@ -230,10 +230,10 @@ class DQMC:
             self.config,
             self.bmats_up,
             self.bmats_dn,
-            self._gf_up,
-            self._gf_dn,
-            self._sgndet,
-            self._logdet,
+            self.gf_up,
+            self.gf_dn,
+            self.sgndet,
+            self.logdet,
             self.num_recomp,
             self.prod_len
         )
@@ -241,13 +241,13 @@ class DQMC:
         acc_ratio = accepted / self.config.size
         self.acceptance_probs.append(acc_ratio)
         logger.debug("[%s] %3d Ratio: %.2f  Signs: (%+d %+d)",
-                     self.status, self.it, acc_ratio, self._sgndet[0], self._sgndet[1])
+                     self.status, self.it, acc_ratio, self.sgndet[0], self.sgndet[1])
 
     def accumulate_measurements(self):
         if self.sampl_recomp:
             # Recompute Green's functions before measurements
             self.compute_greens()
-        self.measurements.accumulate(self._gf_up, self._gf_dn, self._sgndet)
+        self.measurements.accumulate(self.gf_up, self.gf_dn, self.sgndet)
 
     def warmup(self, sweeps):
         self.it = 0
@@ -265,10 +265,9 @@ class DQMC:
             self.accumulate_measurements()
             # user measurement callback
             if callback is not None:
-                gf_up, gf_dn = self.get_greens()
-                out += callback(gf_up, gf_dn, self._sgndet, *args, **kwargs)
+                out += np.asarray(callback(self, *args, **kwargs))
             self.it += 1
-        return out
+        return out / sweeps
 
     def simulate(self, num_equil, num_sampl, callback=None, *args, **kwargs):
         total_sweeps = num_equil + num_sampl
@@ -286,8 +285,8 @@ class DQMC:
 
         t = time.perf_counter() - t0
         logger.info("%s iterations completed!", total_sweeps)
-        logger.info("    Signs: [%+d  %+d]", self._sgndet[0], self._sgndet[1])
-        logger.info(" Log Dets: [%.2f  %.2f]", self._logdet[0], self._logdet[1])
+        logger.info("    Signs: [%+d  %+d]", self.sgndet[0], self.sgndet[1])
+        logger.info(" Log Dets: [%.2f  %.2f]", self.logdet[0], self.logdet[1])
         logger.info("Equil CPU time: %6.1fs  (%.4f s/it)", t_equil, t_equil / num_equil)
         logger.info("Sampl CPU time: %6.1fs  (%.4f s/it)", t_sampl, t_sampl / num_sampl)
         logger.info("Total CPU time: %6.1fs  (%.4f s/it)", t, t / total_sweeps)
