@@ -226,6 +226,24 @@ def reconstruct_udt(u, d, t):
     return np.dot(u, (d * t.T).T)
 
 
+def mdot_udt(mats, prod_len=1):
+    num_mats = len(mats)
+    assert num_mats % prod_len == 0
+    num_blocks = int(num_mats / prod_len)
+    mat = mdot(mats[:prod_len]) if prod_len > 1 else mats[0]
+    u, d, t = decompose_udt(mat)
+    for i in range(1, num_blocks):
+        mat = mdot(mats[i * prod_len:(i + 1) * prod_len]) if prod_len > 1 else mats[i]
+        u_r, d_r, t_r = decompose_udt(mat)
+        # Compute intermediate UDT decomposition of D (T U_R) D_R
+        tmp = (d * np.dot(t, u_r).T).T * d_r
+        u_c, d, t_c = decompose_udt(tmp)
+        # Compute new U and T
+        u = np.dot(u, u_c)
+        t = np.dot(t_c, t_r)
+    return u, d, t
+
+
 @njit(
     float64[:, :, :](float64[:, :, ::1], int64, int64),
     fastmath=True, nogil=True, cache=True
