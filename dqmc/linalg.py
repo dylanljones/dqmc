@@ -99,31 +99,131 @@ def mdot(mats):
     return prod
 
 
-def qrp(a):
+def decompose_qrp(a):
+    """Performs a QRP decomposition (with column pivoting) of a square matrix `A`.
+
+    The QR decomposition with column pivoting is defined as:
+    .. math:
+        A = Q R P
+
+    where `P` is the permutation matrix as a result of the column pivoting.
+
+    Parameters
+    ----------
+    a : (N, N) np.ndarray
+        The input matrix `A` to decompose.
+
+    Returns
+    -------
+    q : (N, N) np.ndarray
+        The orthogonal matrix `Q`.
+    r : (N, N) np.ndarray
+        The upper triangular matrix `R`.
+    jpvt : (N) np.ndarray
+        The column pivoting indices which define the permutation matrix `P`.
+
+    Notes
+    -----
+    Instead of the perumtation matrix the indices of the columns as a result of the
+    pivoting are returned to reduce the memory used. To restore the original order
+    of the input matrix columns these can be simply used as indices.
+    """
+    assert a.shape[0] == a.shape[1]
+
     # Call DGEQP3 to compute QR and tau matrices and the collumn pivot indices
     qr, jpvt, tau, work, info = la.lapack.dgeqp3(a)
 
-    m, n = qr.shape
+    n = qr.shape[0]
     # Call DORGQR to construct Q and R matrix from QR
     r = np.triu(qr[:n, :])
-    if m < n:
-        q, work, info = la.lapack.dorgqr(qr[:, :m], tau)
-    else:
-        qqr = np.empty((m, n), dtype=qr.dtype)
-        qqr[:, :n] = qr
-        q, work, info = la.lapack.dorgqr(qqr, tau)
+    q, work, info = la.lapack.dorgqr(qr, tau)
 
-    # Build permutation matrix as result of the column pivoting
-    jpvt -= 1  # Fortran indices start with 1
-    n = len(jpvt)
-    p = np.zeros((n, n), dtype=np.int64)
-    p[jpvt, np.arange(n)] = 1
-
-    return q, r, p
+    # Sort pivoting indices for column pivoting
+    return q, r, np.argsort(jpvt)
 
 
-def reconstruct_qrp(q, r, p):
-    return np.dot(np.dot(q, r), p.T)
+def reconstruct_qrp(q, r, jpvt):
+    """Reconstructs the original matrix `A` from a QRP decomposition.
+
+    Parameters
+    ----------
+    q : (N, N) np.ndarray
+        The orthogonal matrix `Q`.
+    r : (N, N) np.ndarray
+        The upper triangular matrix `R`.
+    jpvt : (N) np.ndarray
+        The column pivoting indices which define the permutation matrix `P`.
+
+    Returns
+    -------
+    a : (N, N) np.ndarray
+        The reconstructed matrix `A`.
+    """
+    return np.dot(q, r)[:, jpvt]
+
+
+def decompose_udt(a):
+    r"""Performs a UDT decomposition of a square matrix `A`.
+
+    The UDT decomposition can be constructed from the result of a QRP decomposition.
+    Starting from
+    .. math::
+        A = Q R P
+
+    The matrix `D` is given by the diagonal entries of the upper triangular matrix `R`:
+    .. math::
+        D = \diag(\abs(R))
+
+    The definition of `D` makes the matrix `T` well-conditioned. It's columns are
+    scaled by the inverse of `D`:
+    .. math::
+        T = D^{-1} R P
+
+    Parameters
+    ----------
+    a : (N, N) np.ndarray
+        The input matrix `A` to decompose.
+
+    Returns
+    -------
+    u : (N, N) np.ndarray
+        The orthogonal matrix `U`.
+    d : (N) np.ndarray
+        The diagonal entries of the matrix `D`.
+    t : (N, N) np.ndarray
+        The well-conditioned matrix `T`.
+
+    References
+    ----------
+    .. [1] Z. Bai et al., "Stable solutions of linear systems involving long chain
+           of matrix multiplications", Linear Algebra Appl. 435, 659-673 (2011)
+    """
+    q, r, jpvt = decompose_qrp(a)
+    # Extract diagonal entries of R
+    d = np.diag(np.abs(r))
+    # Scale columns of R by elements of 1/D and apply column pivoting
+    t = (r.T / d).T[:, jpvt]
+    return q, d, t
+
+
+def reconstruct_udt(u, d, t):
+    """Reconstructs the original matrix `A` from a UDT decomposition.
+
+    Parameters
+    ----------
+    u : (N, N) np.ndarray
+        The orthogonal matrix `U`.
+    d : (N) np.ndarray
+        The diagonal entries of the matrix `D`.
+    t : (N, N) np.ndarray
+        The well-conditioned matrix `T`.
+
+    Returns
+    -------
+    a : (N, N) np.ndarray
+        The reconstructed matrix `A`.
+    """
+    return np.dot(u, (d * t.T).T)
 
 
 @njit(
@@ -152,12 +252,12 @@ def matrix_product_sequence_0beta(mats, prod_len, shift):
     -----
     The input matrices :math:'B_1, B_2, ..., B_K' are multiplied in
     reverse order in each segment:
-    ..math::
+    .. math::
         B_0, B_1, ..., B_{K-1} -> [B_{L-1}• ... •B_0], ..., [B_{K-1}• ... •B_{K-L-1}]
 
     where L is the number of matrices. If a shift is given, the indices
     are shifted in reverse order. For example, if a shift of 1 is given:
-        ..math::
+    .. math::
         B_0, B_1, ..., B_{K-1} -> [B_{L-2}}• ... •B_1], ..., [B_0•B_{K-1} ... •B_{K-L}]
     """
     num_mats = len(mats)
