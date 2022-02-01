@@ -26,14 +26,14 @@ def test_map_params():
     params = map_params(p_default, beta=values)
     for x, p in zip(values, params):
         assert p.beta == x
-        assert p.dt == x / p.num_timesteps
+        assert p.dt == x / p.num_times
 
     # Map temps
     values = [1.0, 0.5, 0.25]
     params = map_params(p_default, temp=values)
     for x, p in zip(values, params):
         assert p.beta == 1 / x
-        assert p.dt == 1 / (x * p.num_timesteps)
+        assert p.dt == 1 / (x * p.num_times)
 
 
 def test_run_dqmc_parallel():
