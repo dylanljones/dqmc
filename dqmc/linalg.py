@@ -244,6 +244,24 @@ def mdot_udt(mats, prod_len=1):
     return u, d, t
 
 
+def inv_one_plus_mdot(mats):
+    return la.inv(np.eye(mats.shape[1]) + mdot(mats))
+
+
+def inv_one_plus_mdot_udt(mats, prod_len=1):
+    u, dm, t = mdot_udt(mats, prod_len)
+    # Constrcut D_m = min(D, 1) and D_p = max(D, 1)
+    dm = np.array(dm)
+    dp = np.copy(dm)
+    dm[dm > 1] = 1
+    dp[dp < 1] = 1
+    tl = t
+    u, d, t = decompose_udt(np.dot(la.inv(t), np.diag(1 / dp)) + np.dot(u, np.diag(dm)))
+    u, dr, tr = decompose_udt(np.dot(np.diag(dp), la.inv(reconstruct_udt(u, d, t))))
+    ur = np.dot(la.inv(tl), u)
+    return ur, dr, tr
+
+
 @njit(
     float64[:, :, :](float64[:, :, ::1], int64, int64),
     fastmath=True, nogil=True, cache=True
