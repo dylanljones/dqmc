@@ -41,7 +41,7 @@ class Parameters:
     t: float = 1.0
     mu: float = 0.
     dt: float = 0.01
-    num_timesteps: int = 40
+    num_times: int = 40
     num_equil: int = 512
     num_sampl: int = 2048
     num_wraps: int = 1
@@ -59,19 +59,19 @@ class Parameters:
 
     @property
     def beta(self):
-        return self.num_timesteps * self.dt
+        return self.num_times * self.dt
 
     @beta.setter
     def beta(self, beta):
-        self.dt = beta / self.num_timesteps
+        self.dt = beta / self.num_times
 
     @property
     def temp(self):
-        return 1 / (self.num_timesteps * self.dt)
+        return 1 / (self.num_times * self.dt)
 
     @temp.setter
     def temp(self, temp):
-        self.dt = 1 / (temp * self.num_timesteps)
+        self.dt = 1 / (temp * self.num_times)
 
 
 def parse(file):  # noqa: C901
@@ -157,11 +157,11 @@ def parse(file):  # noqa: C901
 class DQMC:
     """Main DQMC simulator instance."""
 
-    def __init__(self, model, num_timesteps, num_recomp=1, prod_len=1, seed=None,
+    def __init__(self, model, num_times, num_recomp=1, prod_len=1, seed=None,
                  sampl_recomp=True, progress=False, unequal_time=True):
-        if num_recomp > 0 and num_timesteps % num_recomp != 0:
+        if num_recomp > 0 and num_times % num_recomp != 0:
             raise ValueError("Number of time steps not a multiple of `num_recomp`!")
-        if prod_len > 0 and num_timesteps % prod_len != 0:
+        if prod_len > 0 and num_times % prod_len != 0:
             raise ValueError("Number of time steps not a multiple of `prod_len`!")
 
         if seed is None:
@@ -176,7 +176,7 @@ class DQMC:
 
         self.model = model
         # Init QMC variables
-        self.expk, self.expk_inv, self.nu, self.config = init_qmc(model, num_timesteps,
+        self.expk, self.expk_inv, self.nu, self.config = init_qmc(model, num_times,
                                                                   seed)
 
         # Pre-compute time flow matrices
@@ -199,7 +199,7 @@ class DQMC:
 
         # Measurement data
         num_sites = self.config.shape[0]
-        self.measurements = MeasurementData(num_sites, num_timesteps)
+        self.measurements = MeasurementData(num_sites, num_times)
 
     def compute_greens(self, t=0):   # noqa: F811
         if self.prod_len == 0:
@@ -305,23 +305,23 @@ class DQMC:
 
 def init_simulator(p, progress=False):
     model = hubbard_hypercube(p.shape, p.u, p.eps, p.t, p.mu, p.beta, periodic=True)
-    return DQMC(model, p.num_timesteps, p.num_wraps, p.prod_len, p.seed,
+    return DQMC(model, p.num_times, p.num_wraps, p.prod_len, p.seed,
                 bool(p.sampl_recomp), progress)
 
 
-def run_dqmc(p, progress=False, unequal_time=True, callback=None, *args, **kwargs):
+def run_dqmc(p, unequal_time=True, callback=None, progress=False, *args, **kwargs):
     """Runs a DQMC simulation.
 
     Parameters
     ----------
     p : Parameters
         The input parameters of the DQMC simulation.
-    progress : bool
-        If `True` a progressbar will be printed.
     unequal_time : bool
         If `True`, unequal-time measurements will be performed.
     callback : callable, optional
         A optional callback method for measuring additional observables.
+    progress : bool
+        If `True` a progressbar will be printed.
     *args : tuple, optional
         Optional positional arguments for the user callback method.
     **kwargs : dict, optional
@@ -334,7 +334,7 @@ def run_dqmc(p, progress=False, unequal_time=True, callback=None, *args, **kwarg
         callback or `None`.
     """
     model = hubbard_hypercube(p.shape, p.u, p.eps, p.t, p.mu, p.beta, periodic=True)
-    dqmc = DQMC(model, p.num_timesteps, p.num_wraps, p.prod_len, p.seed,
+    dqmc = DQMC(model, p.num_times, p.num_wraps, p.prod_len, p.seed,
                 bool(p.sampl_recomp), progress, unequal_time)
     try:
         results, extra = dqmc.simulate(p.num_equil, p.num_sampl, callback=callback,
@@ -359,7 +359,7 @@ def log_parameters(p):
     logger.info("      beta: %s", p.beta)
     logger.info("      temp: %s", 1 / p.beta)
     logger.info(" time-step: %s", p.dt)
-    logger.info("         L: %s", p.num_timesteps)
+    logger.info("         L: %s", p.num_times)
     logger.info("    nwraps: %s", p.num_wraps)
     logger.info("   prodLen: %s", p.prod_len)
     logger.info("    nequil: %s", p.num_equil)

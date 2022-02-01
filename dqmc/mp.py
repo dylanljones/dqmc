@@ -113,8 +113,8 @@ def transpose_results(results):
 
 
 # noinspection PyShadowingNames
-def run_dqmc_parallel(params, callback=None, max_workers=None, progress=True,
-                      header=None, transpose=False):
+def run_dqmc_parallel(params, unequal_time=True, callback=None, max_workers=None,
+                      progress=True, header=None, transpose=False):
     """Runs multiple DQMC simulations in parallel.
 
     Parameters
@@ -122,6 +122,8 @@ def run_dqmc_parallel(params, callback=None, max_workers=None, progress=True,
     params : Iterable of Parameters
         The input parameters to map to the processes. The list of results preserves
         the input order of the parameters.
+    unequal_time : bool
+        If `True`, unequal-time measurements will be performed.
     callback : callable, optional
         A optional callback method for measuring additional observables.
     max_workers : int, optional
@@ -155,7 +157,7 @@ def run_dqmc_parallel(params, callback=None, max_workers=None, progress=True,
     """
     max_workers = get_max_workers(max_workers)
 
-    args = [(p, callback) for p in params]
+    args = [(p, unequal_time, callback) for p in params]
     with concurrent.futures.ProcessPoolExecutor(max_workers) as executor:
         results = executor.map(run_dqmc, *zip(*args))
         if progress:

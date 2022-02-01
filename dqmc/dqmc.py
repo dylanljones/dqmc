@@ -56,7 +56,7 @@ UP, DN = +1, -1
 jkwargs = dict(nogil=True, fastmath=True, cache=True)
 
 
-def init_configuration(num_sites: int, num_timesteps: int) -> np.ndarray:
+def init_configuration(num_sites: int, num_times: int) -> np.ndarray:
     """Initializes the Hubbard-Stratonovich field for the DQMC simulation.
 
     The 'Hubbard-Stratonovich field' (also called the 'configuration') is an
@@ -67,16 +67,17 @@ def init_configuration(num_sites: int, num_timesteps: int) -> np.ndarray:
     ----------
     num_sites : int
         The number of sites `N` of the lattice model.
-    num_timesteps : int
+    num_times : int
         The number of time steps `L` used in the Monte Carlo simulation.
+
     Returns
     -------
     config : (N, L) np.ndarray
         The array representing the configuration or Hubbard-Stratonovich field.
     """
-    # samples = random.choices([-1, +1], k=num_sites * num_timesteps)
-    samples = np.random.choice([-1, +1], size=num_sites * num_timesteps)
-    config = np.array(samples).reshape((num_sites, num_timesteps)).astype(np.int8)
+    # samples = random.choices([-1, +1], k=num_sites * num_times)
+    samples = np.random.choice([-1, +1], size=num_sites * num_times)
+    config = np.array(samples).reshape((num_sites, num_times)).astype(np.int8)
     return config
 
 
