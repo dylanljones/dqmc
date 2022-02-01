@@ -15,12 +15,14 @@ import logging
 import numpy as np
 from typing import Union
 from dataclasses import dataclass
+from tqdm import tqdm
 from .model import hubbard_hypercube
 from .dqmc import (     # noqa: F401
     init_qmc,
     compute_timestep_mats,
     compute_greens,
     compute_greens_qrd,
+    compute_unequal_time_greens,
     init_greens,
     dqmc_iteration,
 )
@@ -156,7 +158,7 @@ class DQMC:
     """Main DQMC simulator instance."""
 
     def __init__(self, model, num_timesteps, num_recomp=1, prod_len=1, seed=None,
-                 sampl_recomp=True):
+                 sampl_recomp=True, progress=False, unequal_time=True):
         if num_recomp > 0 and num_timesteps % num_recomp != 0:
             raise ValueError("Number of time steps not a multiple of `num_recomp`!")
         if prod_len > 0 and num_timesteps % prod_len != 0:
@@ -165,6 +167,8 @@ class DQMC:
         if seed is None:
             seed = 0
         # random.seed(seed)
+        self.progress = progress
+        self.unequal_time_measurements = unequal_time
 
         self.num_recomp = num_recomp
         self.sampl_recomp = sampl_recomp
@@ -195,7 +199,7 @@ class DQMC:
 
         # Measurement data
         num_sites = self.config.shape[0]
-        self.measurements = MeasurementData(num_sites)
+        self.measurements = MeasurementData(num_sites, num_timesteps)
 
     def compute_greens(self, t=0):   # noqa: F811
         if self.prod_len == 0:
@@ -248,18 +252,24 @@ class DQMC:
             # Recompute Green's functions before measurements
             self.compute_greens()
         self.measurements.accumulate(self.gf_up, self.gf_dn, self.sgndet)
+        if self.unequal_time_measurements:
+            self.measurements.accumulate_unequal_time(self.bmats_up,
+                                                      self.bmats_dn,
+                                                      self.gf_up,
+                                                      self.gf_dn,
+                                                      self.sgndet)
 
     def warmup(self, sweeps):
         self.it = 0
         self.status = "warm"
-        for sweep in range(sweeps):
+        for _ in tqdm(range(sweeps), desc="Warmup", disable=not self.progress):
             self.iteration()
             self.it += 1
 
     def measure(self, sweeps, callback=None, *args, **kwargs):
         out = 0.0
         self.status = "meas"
-        for sweep in range(sweeps):
+        for _ in tqdm(range(sweeps), desc="Sample", disable=not self.progress):
             self.iteration()
             # perform measurements
             self.accumulate_measurements()
@@ -293,15 +303,30 @@ class DQMC:
         return self.measurements, extra_results
 
 
-def run_dqmc(p, callback=None):
+def init_simulator(p, progress=False):
+    model = hubbard_hypercube(p.shape, p.u, p.eps, p.t, p.mu, p.beta, periodic=True)
+    return DQMC(model, p.num_timesteps, p.num_wraps, p.prod_len, p.seed,
+                bool(p.sampl_recomp), progress)
+
+
+def run_dqmc(p, progress=False, unequal_time=True, callback=None, *args, **kwargs):
     """Runs a DQMC simulation.
 
     Parameters
     ----------
     p : Parameters
         The input parameters of the DQMC simulation.
+    progress : bool
+        If `True` a progressbar will be printed.
+    unequal_time : bool
+        If `True`, unequal-time measurements will be performed.
     callback : callable, optional
         A optional callback method for measuring additional observables.
+    *args : tuple, optional
+        Optional positional arguments for the user callback method.
+    **kwargs : dict, optional
+        Optional keyword arguments for the user callback method.
+
     Returns
     -------
     results : Tuple
@@ -310,9 +335,10 @@ def run_dqmc(p, callback=None):
     """
     model = hubbard_hypercube(p.shape, p.u, p.eps, p.t, p.mu, p.beta, periodic=True)
     dqmc = DQMC(model, p.num_timesteps, p.num_wraps, p.prod_len, p.seed,
-                bool(p.sampl_recomp))
+                bool(p.sampl_recomp), progress, unequal_time)
     try:
-        results, extra = dqmc.simulate(p.num_equil, p.num_sampl, callback=callback)
+        results, extra = dqmc.simulate(p.num_equil, p.num_sampl, callback=callback,
+                                       *args, **kwargs)
     except np.linalg.LinAlgError:
         return ()
     # results = [dqmc.gf_up, dqmc.gf_dn, dqmc.n_up, dqmc.n_dn, dqmc.n_double,
@@ -357,6 +383,4 @@ def log_results(*results):
     logger.info(" Spin-down density: %8.4f", n_dn)
     logger.info("  Double occupancy: %8.4f", n_double)
     logger.info("      Local moment: %8.4f", local_moment)
-    if results[6]:
-        logger.info("   Callback results: %s", results[4])
     logger.info("")

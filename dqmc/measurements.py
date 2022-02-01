@@ -11,8 +11,10 @@
 import numpy as np
 from numba import float64, int64
 from numba.experimental import jitclass
+from .dqmc import compute_unequal_time_greens
 
 gmat_t = float64[:, ::1]
+gtau_t = float64[:, :, ::1]
 
 
 @jitclass([
@@ -24,10 +26,12 @@ gmat_t = float64[:, ::1]
     ("_n_dn", float64[:]),
     ("_n_dbl", float64[:]),
     ("_mz2", float64[:]),
+    ("_gftau0_up", gtau_t),
+    ("_gftau0_dn", gtau_t),
 ])
 class MeasurementData:
     """Measurement container for equal time observables."""
-    def __init__(self, num_sites):
+    def __init__(self, num_sites, num_times):
         self.count = 0
         self.num_sites = num_sites
 
@@ -38,6 +42,9 @@ class MeasurementData:
         self._n_dn = np.zeros(num_sites, dtype=np.float64)
         self._n_dbl = np.zeros(num_sites, dtype=np.float64)
         self._mz2 = np.zeros(num_sites, dtype=np.float64)
+
+        self._gftau0_up = np.zeros((num_times, num_sites, num_sites), dtype=np.float64)
+        self._gftau0_dn = np.zeros((num_times, num_sites, num_sites), dtype=np.float64)
 
     @property
     def gf_up(self):
@@ -62,6 +69,14 @@ class MeasurementData:
     @property
     def mz2(self):
         return self._mz2 / self.count
+
+    @property
+    def gftau0_up(self):
+        return self._gftau0_up / self.count
+
+    @property
+    def gftau0_dn(self):
+        return self._gftau0_dn / self.count
 
     def accumulate(self, gf_up, gf_dn, sgns):
         """Acummulate (unnormalized) equal time measurements of observables.
@@ -98,6 +113,11 @@ class MeasurementData:
         self._n_dbl += n_dbl * signfac
         self._mz2 += mz2 * signfac
 
+    def accumulate_unequal_time(self, bmats_up, bmats_dn, gf_up, gf_dn, sgns):
+        signfac = sgns[0] * sgns[1]
+        self._gftau0_up += signfac * compute_unequal_time_greens(bmats_up, gf_up)
+        self._gftau0_dn += signfac * compute_unequal_time_greens(bmats_dn, gf_dn)
+
     def normalize(self):
         """Normalizes and returns all equal time measurements of observables."""
         gf_up = self._gf_up / self.count
@@ -106,4 +126,6 @@ class MeasurementData:
         n_dn = self._n_dn / self.count
         n_dbl = self._n_dbl / self.count
         mz2 = self._mz2 / self.count
-        return gf_up, gf_dn, n_up, n_dn, n_dbl, mz2
+        gftau0_up = self._gftau0_up / self.count
+        gftau0_dn = self._gftau0_dn / self.count
+        return gf_up, gf_dn, n_up, n_dn, n_dbl, mz2, gftau0_up, gftau0_dn

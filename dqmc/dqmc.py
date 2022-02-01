@@ -582,12 +582,12 @@ def compute_unequal_time_greens(bmats, gf0):
     """
     num_times, num_sites, _ = bmats.shape
     gf = np.zeros((num_times, num_sites, num_sites), dtype=np.float64)
-    gf[0] += gf0
+    gf[0] = gf0
     for t in range(1, num_times):
         indices = np.arange(t - 1, -1, -1)
         bmat_seq = bmats[indices]
         bmat_prod = mdot(bmat_seq)
-        gf[t] += np.dot(bmat_prod, gf0)
+        gf[t] = np.dot(bmat_prod, gf0)
     return gf
 
 
