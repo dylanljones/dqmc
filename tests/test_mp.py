@@ -39,5 +39,5 @@ def test_map_params():
 def test_run_dqmc_parallel():
     p_default = Parameters(5, num_sampl=512)
     params = map_params(p_default, u=[1.0, 2.0, 3.0])
-    results = run_dqmc_parallel(params, progress=False)
+    results = run_dqmc_parallel(params, progress=False, unequal_time=False)
     assert len(results) == 3
