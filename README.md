@@ -212,7 +212,7 @@ num_timesteps = 100
 warmup, measure = 300, 3000
 p = Parameters(shape, u, eps, hop, mu, dt, num_timesteps, warmup, measure)
 
-gf_up, gf_dn, n_up, n_dn, n_double, moment, occ = run_dqmc(p, callback=mfuncs.occupation)
+gf_up, gf_dn, n_up, n_dn, n_double, moment, gftau0_up, gftau0_dn, occ = run_dqmc(p, callback=mfuncs.occupation)
 ```
 The default observables are returned first, folled by the result of the callback (`0`
 if no callback is passed).
