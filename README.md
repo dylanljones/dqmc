@@ -2,9 +2,19 @@
 
 ![GitHub tag (latest by date)](https://img.shields.io/github/v/tag/dylanljones/dqmc)
 ![GitHub license](https://img.shields.io/github/license/dylanljones/dqmc)
-[![Build](https://github.com/dylanljones/dqmc/actions/workflows/build.yml/badge.svg)](https://github.com/dylanljones/dqmc/actions/workflows/build.yml)
-[![Tests](https://github.com/dylanljones/dqmc/actions/workflows/test-all-master.yml/badge.svg)](https://github.com/dylanljones/dqmc/actions/workflows/test-all-master.yml)
 
+|        |                                      |                                       |
+|:-------|:-------------------------------------|:--------------------------------------|
+| Master | [![Build][build-master]][build-link] | [![Tests][tests-master]][test-link]   |
+| Dev    | [![Build][build-dev]][build-link]    | [![Tests][tests-dev]][test-link]      |
+
+[build-master]: https://img.shields.io/github/workflow/status/dylanljones/dqmc/Build/master?label=build&logo=github&style=flat-square
+[build-dev]: https://img.shields.io/github/workflow/status/dylanljones/dqmc/Build/dev?label=build&logo=github&style=flat-square
+[build-link]: https://github.com/dylanljones/dqmc/actions/workflows/build.yml
+
+[tests-master]: https://img.shields.io/github/workflow/status/dylanljones/dqmc/Tests/master?label=tests&logo=github&style=flat-square
+[tests-dev]: https://img.shields.io/github/workflow/status/dylanljones/dqmc/Tests/dev?label=tests&logo=github&style=flat-square
+[test-link]: https://github.com/dylanljones/dqmc/actions/workflows/test.yml
 
 Efficient and stable Determinant Quantum Monte Carlo (DQMC) simulations of the Hubbard model in Python.
 
