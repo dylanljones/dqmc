@@ -41,11 +41,18 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install pytest
-        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+        pip install pytest pytest-cov codecov
+        pip install -r requirements.txt
     - name: Build Fortran source code
       run: |
         make
-    - name: Run all tests
+    - name: Run tests
       run: |
-        pytest dqmc/
+        pytest dqmc/ --cov=dqmc --cov-report=xml -v
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v2
+      with:
+        env_vars: OS,PYTHON
+        verbose: True
+    - name: Coverage
+      run: codecov

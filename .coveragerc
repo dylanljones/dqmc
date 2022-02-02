@@ -1,0 +1,34 @@
+# .coveragerc to control coverage.py
+[run]
+branch = True
+source = dqmc
+
+[report]
+exclude_lines =
+    # Have to re-enable the standard pragma
+    pragma: no cover
+
+	# Don't complain about debug-only code and print statements:
+    def __repr__
+    def __str__
+
+	# Don't complain about abstract methods
+    @abstract
+
+    # Don't complain if tests don't hit defensive assertion code:
+    raise AssertionError
+    raise NotImplementedError
+
+    # Don't complain if non-runnable code isn't run:
+    if 0:
+    if __name__ == .__main__.:
+
+ignore_errors = True
+
+# Skip source files:
+omit =
+  dqmc/tests/*
+  dqmc/__init__.py
+  dqmc/__main__.py
+  dqmc/mfuncs.py
+  dqmc/_version.py
