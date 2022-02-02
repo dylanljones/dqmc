@@ -125,7 +125,8 @@ class Database:
             kwargs = kwargs.__dict__
         group = self.create_simulation_group(kwargs)
         # Create datasets
-        keys = ["gf_up", "gf_dn", "n_up", "n_dn", "n_dbl", "moment", "user"]
+        keys = ["gf_up", "gf_dn", "n_up", "n_dn", "n_dbl", "moment",
+                "gftau0_up", "gftau0_dn", "user"]
         for k, res in zip(keys, results):
             if k in group:
                 del group[k]
@@ -154,8 +155,8 @@ def compute_dataset(db, p):
     return results
 
 
-def compute_datasets(db, params, max_workers=None, batch_size=None, callback=None,
-                     progress=True, header=None):
+def compute_datasets(db, params, unequal_time=True, max_workers=None,
+                     batch_size=None, callback=None, progress=True, header=None):
     """Runs multiple DQMC simulations in parallel and stores the results in a database.
 
     Parameters
@@ -166,6 +167,8 @@ def compute_datasets(db, params, max_workers=None, batch_size=None, callback=Non
         The input parameters to map to the processes. The hash of the parameters
         are used as a key to store the results of the DQMC simulation in the database.
         The list of the returned results preserves the input order of the parameters.
+    unequal_time : bool
+        If ``True``, unequal-time measurements will be performed.
     callback : callable, optional
         A optional callback method for measuring additional observables.
     max_workers : int, optional
@@ -215,7 +218,8 @@ def compute_datasets(db, params, max_workers=None, batch_size=None, callback=Non
             if batch_size != num_params:
                 desc += f" {batch + 1}/{num_batches}"
         # Run DQMC simulations
-        results = run_dqmc_parallel(batch_params, callback, max_workers, progress, desc)
+        results = run_dqmc_parallel(batch_params, unequal_time, callback,
+                                    max_workers, progress, desc)
         # Save results to database
         for p, res in zip(batch_params, results):
             db.save_results(p, res)
@@ -224,8 +228,8 @@ def compute_datasets(db, params, max_workers=None, batch_size=None, callback=Non
     return db.get_results(*params)
 
 
-def update_datasets(db, params, max_workers=None, batch_size=None, callback=None,
-                    overwrite=False, progress=True, header=None):
+def update_datasets(db, params, unequal_time=True, max_workers=None, batch_size=None,
+                    callback=None, overwrite=False, progress=True, header=None):
     """Updates the database to contain all results of the passed simulation parameters.
 
     Checks which datasets are missing in the database and computes the missing results
@@ -239,6 +243,8 @@ def update_datasets(db, params, max_workers=None, batch_size=None, callback=None
         The input parameters to map to the processes. The hash of the parameters
         are used as a key to store the results of the DQMC simulation in the database.
         The list of the returned results preserves the input order of the parameters.
+    unequal_time : bool
+        If ``True``, unequal-time measurements will be performed.
     callback : callable, optional
         A optional callback method for measuring additional observables.
     max_workers : int, optional
@@ -270,7 +276,7 @@ def update_datasets(db, params, max_workers=None, batch_size=None, callback=None
     missing = db.find_missing(params, overwrite)
     # Compute missing datasets and store in database
     if missing:
-        compute_datasets(db, missing, max_workers, batch_size, callback, progress,
-                         header)
+        compute_datasets(db, missing, unequal_time, max_workers, batch_size, callback,
+                         progress, header)
     # Get all results (existing and new) from the database
     return db.get_results(*params)

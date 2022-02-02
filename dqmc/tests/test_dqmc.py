@@ -28,7 +28,7 @@ st_nsites = st.integers(4, 20)
 st_ntimes = st.integers(50, 200).filter(lambda x: x % 2 == 0)
 st_i = st.integers(0, 20)
 st_t = st.integers(0, 200)
-st_nprod = st.integers(2, 20).filter(lambda x: x % 2 == 0)
+st_nprod = st.integers(1, 20)
 
 
 def _init(num_sites, num_timesteps, u, mu, beta, eps=0.0, periodic=True):

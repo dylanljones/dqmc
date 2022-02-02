@@ -1,10 +1,20 @@
 # DQMC
-[![Build](https://github.com/dylanljones/dqmc/actions/workflows/build.yml/badge.svg)](https://github.com/dylanljones/dqmc/actions/workflows/build.yml)
-[![Tests](https://github.com/dylanljones/dqmc/actions/workflows/test-all-master.yml/badge.svg)](https://github.com/dylanljones/dqmc/actions/workflows/test-all-master.yml)
 
 ![GitHub tag (latest by date)](https://img.shields.io/github/v/tag/dylanljones/dqmc)
 ![GitHub license](https://img.shields.io/github/license/dylanljones/dqmc)
-[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
+
+|        |                                      |                                       |
+|:-------|:-------------------------------------|:--------------------------------------|
+| Master | [![Build][build-master]][build-link] | [![Tests][tests-master]][test-link]   |
+| Dev    | [![Build][build-dev]][build-link]    | [![Tests][tests-dev]][test-link]      |
+
+[build-master]: https://img.shields.io/github/workflow/status/dylanljones/dqmc/Build/master?label=build&logo=github&style=flat-square
+[build-dev]: https://img.shields.io/github/workflow/status/dylanljones/dqmc/Build/dev?label=build&logo=github&style=flat-square
+[build-link]: https://github.com/dylanljones/dqmc/actions/workflows/build.yml
+
+[tests-master]: https://img.shields.io/github/workflow/status/dylanljones/dqmc/Tests/master?label=tests&logo=github&style=flat-square
+[tests-dev]: https://img.shields.io/github/workflow/status/dylanljones/dqmc/Tests/dev?label=tests&logo=github&style=flat-square
+[test-link]: https://github.com/dylanljones/dqmc/actions/workflows/test.yml
 
 Efficient and stable Determinant Quantum Monte Carlo (DQMC) simulations of the Hubbard model in Python.
 
@@ -161,7 +171,7 @@ warmup, measure = 300, 3000
 model = hubbard_hypercube(shape, u=4., eps=0., hop=1., mu=0., beta=1/5, periodic=True)
 
 dqmc = DQMC(model, num_timesteps, num_recomp=1, prod_len=1, seed=0)
-results = dqmc.simulate(warmup, measure, callback=mfuncs.occupation)
+results, out = dqmc.simulate(warmup, measure, callback=mfuncs.occupation)
 ```
 The `simulate`-method measures the observables
 - `gf_up`:
@@ -182,13 +192,12 @@ The `simulate`-method measures the observables
 Additionally, the `simulate`-method has a `callback` parameter for measuring observables, which
 expects a method of the form
 ```python
-def callback(gf_up, gf_dn, signs, *args, **kwargs):
+def callback(self, *args, **kwargs):
     ...
     return result
 ```
-where `gf_up` and `gf_dn` are the spin up and down Green's functions and `signs`
-is an array of the spin up and down sign of the GF determinant after the DQMC iteration.
-The returned result must be a `np.ndarray` for ensuring correct averaging after the
+where `self` is the `DQMC` instance.
+The returned result must be castable to a `np.ndarray` for ensuring correct averaging after the
 measurement sweeps. A collection of methods for measuring observables is contained
 in the `mfuncs` module.
 
@@ -203,7 +212,7 @@ num_timesteps = 100
 warmup, measure = 300, 3000
 p = Parameters(shape, u, eps, hop, mu, dt, num_timesteps, warmup, measure)
 
-gf_up, gf_dn, n_up, n_dn, n_double, moment, occ = run_dqmc(p, callback=mfuncs.occupation)
+gf_up, gf_dn, n_up, n_dn, n_double, moment, gftau0_up, gftau0_dn, occ = run_dqmc(p, callback=mfuncs.occupation)
 ```
 The default observables are returned first, folled by the result of the callback (`0`
 if no callback is passed).
@@ -243,6 +252,10 @@ from the root of the repo:
 python -m black dqmc/
 pre-commit run
 `````
+or install the pre-commit hooks by running
+`````commandline
+pre-commit install
+`````
 
 ## References
 1. Z. Bai, W. Chen, R. T. Scalettar and I. Yamazaki
@@ -263,3 +276,6 @@ pre-commit run
 6. Z. Bai, C.-R. Lee, R.-C. Li and S. Xu
    "Stable solutions of linear systems involving long chain of matrix multiplications"
    Linear Algebra Appl. 435, 659-673 (2011) [DOI](https://doi.org/10.1016/j.laa.2010.06.023)
+7. C. Bauer
+   "Fast and stable determinant quantum Monte Carlo"
+   SciPost Phys. Core 2, 11 (2020) [DOI](https://doi.org/10.21468/SciPostPhysCore.2.2.011)

@@ -75,15 +75,25 @@ def test_mdot(matrices):
 
 
 @given(mat)
-def test_qrp(a):
+def test_decompose_qrp(a):
     try:
-        q, r, p = linalg.qrp(a)
+        q, r, jpvt = linalg.decompose_qrp(a)
     except Exception:  # noqa
         assume(False)
     else:
-        lhs = np.dot(a, p)
-        rhs = np.dot(q, r)
-        assert_allclose(lhs, rhs, rtol=1e-6, atol=10)
+        assert_allclose(linalg.reconstruct_qrp(q, r, jpvt), a, rtol=1e-6, atol=10)
+
+
+@given(mat)
+def test_decompose_udt(a):
+    try:
+        u, d, t = linalg.decompose_udt(a)
+    except Exception:  # noqa
+        assume(False)
+    else:
+        rec = linalg.reconstruct_udt(u, d, t)
+        assume(np.any(np.isfinite(rec)))
+        assert_allclose(rec, a, rtol=1e-6, atol=10)
 
 
 @given(mat_arr, st.integers(1, 16), st.integers(0, 10))
