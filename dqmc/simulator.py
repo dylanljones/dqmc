@@ -344,7 +344,8 @@ def run_dqmc(p, unequal_time=True, callback=None, progress=False, *args, **kwarg
     # results = [dqmc.gf_up, dqmc.gf_dn, dqmc.n_up, dqmc.n_dn, dqmc.n_double,
     #            dqmc.local_moment, extra_results]
     # return results
-    return *results.normalize(), extra
+    result_arr = list(results.normalize()) + [extra]
+    return result_arr
 
 
 def log_parameters(p):
