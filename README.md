@@ -3,10 +3,10 @@
 ![GitHub tag (latest by date)](https://img.shields.io/github/v/tag/dylanljones/dqmc)
 ![GitHub license](https://img.shields.io/github/license/dylanljones/dqmc)
 
-|        |                                      |                                       |                                                   |
-|:-------|:-------------------------------------|:--------------------------------------|:--------------------------------------------------|
-| Master | [![Build][build-master]][build-link] | [![Tests][tests-master]][test-link]   | [![Codecov][codecov-master]][codecov-master-link] |
-| Dev    | [![Build][build-dev]][build-link]    | [![Tests][tests-dev]][test-link]      | [![Codecov][codecov-dev]][codecov-dev-link]       |
+|        |                                      |                                       |
+|:-------|:-------------------------------------|:--------------------------------------|
+| Master | [![Build][build-master]][build-link] | [![Tests][tests-master]][test-link]   |
+| Dev    | [![Build][build-dev]][build-link]    | [![Tests][tests-dev]][test-link]      |
 
 [build-master]: https://img.shields.io/github/workflow/status/dylanljones/dqmc/Build/master?label=build&logo=github&style=flat-square
 [build-dev]: https://img.shields.io/github/workflow/status/dylanljones/dqmc/Build/dev?label=build&logo=github&style=flat-square
@@ -16,10 +16,6 @@
 [tests-dev]: https://img.shields.io/github/workflow/status/dylanljones/dqmc/Tests/dev?label=tests&logo=github&style=flat-square
 [test-link]: https://github.com/dylanljones/dqmc/actions/workflows/test.yml
 
-[codecov-master]: https://img.shields.io/codecov/c/github/dylanljones/dqmc/master?logo=codecov&style=flat-square
-[codecov-master-link]: https://app.codecov.io/gh/dylanljones/dqmc/branch/master
-[codecov-dev]: https://img.shields.io/codecov/c/github/dylanljones/dqmc/dev?logo=codecov&style=flat-square
-[codecov-dev-link]: https://app.codecov.io/gh/dylanljones/dqmc/branch/dev
 
 Efficient and stable Determinant Quantum Monte Carlo (DQMC) simulations of the Hubbard model in Python.
 
@@ -168,7 +164,7 @@ To run a Determinant Quantum Monte carlo simulation the `DQMC`-object can be use
 This is a wrapper of the main DQMC methods, which are contained in `dqmc/dqmc.py`
 and use jit (just in time compilation) to improve performance:
 ```python
-from dqmc import hubbard_hypercube, mfuncs, DQMC
+from dqmc import hubbard_hypercube, DQMC
 
 shape = (5, 5)
 num_timesteps = 100
@@ -176,7 +172,7 @@ warmup, measure = 300, 3000
 model = hubbard_hypercube(shape, u=4., eps=0., hop=1., mu=0., beta=1/5, periodic=True)
 
 dqmc = DQMC(model, num_timesteps, num_recomp=1, prod_len=1, seed=0)
-results, out = dqmc.simulate(warmup, measure, callback=mfuncs.occupation)
+results, callback_result = dqmc.simulate(warmup, measure)
 ```
 The `simulate`-method measures the observables
 - `gf_up`:
@@ -203,12 +199,11 @@ def callback(self, *args, **kwargs):
 ```
 where `self` is the `DQMC` instance.
 The returned result must be castable to a `np.ndarray` for ensuring correct averaging after the
-measurement sweeps. A collection of methods for measuring observables is contained
-in the `mfuncs` module.
+measurement sweeps.
 
 The above steps can be simplified by creating a `Parameter` object and calling the `run_dqmc`-method.
 ```python
-from dqmc import run_dqmc, mfuncs, Parameters
+from dqmc import run_dqmc, Parameters
 
 shape = 10
 u, eps, mu, hop = 4.0, 0.0, 0.0, 1.0
@@ -217,7 +212,7 @@ num_timesteps = 100
 warmup, measure = 300, 3000
 p = Parameters(shape, u, eps, hop, mu, dt, num_timesteps, warmup, measure)
 
-gf_up, gf_dn, n_up, n_dn, n_double, moment, gftau0_up, gftau0_dn, occ = run_dqmc(p, callback=mfuncs.occupation)
+gf_up, gf_dn, n_up, n_dn, n_double, moment, gftau0_up, gftau0_dn, _ = run_dqmc(p)
 ```
 The default observables are returned first, folled by the result of the callback (`0`
 if no callback is passed).
