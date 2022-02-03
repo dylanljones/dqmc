@@ -31,7 +31,6 @@ omit =
   dqmc/tests/*
   dqmc/__init__.py
   dqmc/__main__.py
-  dqmc/mfuncs.py
   dqmc/data.py
   dqmc/logging.py
   dqmc/_version.py
