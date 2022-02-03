@@ -15,7 +15,8 @@ import hashlib
 import logging
 import numpy as np
 from typing import Union
-from .simulator import Parameters, run_dqmc
+from .simulator import run_dqmc
+from .params import Parameters
 from .mp import get_max_workers, run_dqmc_parallel
 
 logger = logging.getLogger("dqmc")

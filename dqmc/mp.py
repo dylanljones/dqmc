@@ -15,7 +15,8 @@ import psutil
 import numpy as np  # noqa: F401
 import concurrent.futures
 from tqdm import tqdm
-from .simulator import run_dqmc, Parameters
+from .simulator import run_dqmc
+from .params import Parameters
 
 logger = logging.getLogger("dqmc")
 

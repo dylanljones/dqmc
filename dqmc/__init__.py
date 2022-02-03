@@ -10,7 +10,8 @@
 
 from .logging import logger
 from .model import HubbardModel, hubbard_hypercube
-from .simulator import DQMC, run_dqmc, parse, Parameters, log_parameters, log_results
+from .simulator import DQMC, run_dqmc, log_results
+from .params import parse, Parameters, log_parameters
 from .mp import map_params, run_dqmc_parallel, transpose_results
 from .data import Database, compute_dataset, compute_datasets, update_datasets
 
