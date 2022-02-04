@@ -54,14 +54,14 @@ def assert_gf_equal(actual, desired, rtol=1e-8, atol=1e-5):
 
 
 def test_init_qmc_atomic():
-    model = hubbard_hypercube(5, u=1, hop=0., beta=1.0)
+    model = hubbard_hypercube(5, u=1, hop=0., beta=1.0, periodic=None)
     expk, _, nu, config = dqmc.init_qmc(model, 100, 0)
     assert_equal(np.eye(model.num_sites), expk)
     assert abs(nu - 0.1) < 1e-3
 
 
 def test_init_qmc_noninter():
-    model = hubbard_hypercube(5, u=0, hop=1., beta=1.0)
+    model = hubbard_hypercube(5, u=0, hop=1., beta=1.0, periodic=None)
     expk, _, nu, config = dqmc.init_qmc(model, 100, 0)
 
     expected = np.eye(model.num_sites)
@@ -72,7 +72,7 @@ def test_init_qmc_noninter():
 
 
 def test_init_qmc_zerot():
-    model = hubbard_hypercube(5, u=1, hop=1., beta=0.0)
+    model = hubbard_hypercube(5, u=1, hop=1., beta=0.0, periodic=None)
     expk, _, nu, config = dqmc.init_qmc(model, 100, 0)
     assert_equal(np.eye(model.num_sites), expk)
     assert nu == 0
