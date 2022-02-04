@@ -34,15 +34,18 @@ class HubbardModel(Lattice):
         The chemical potential is subtracted from the on-site energy.
     beta : float, optional
         The inverse of the temperature `β=1/T`
+    disorder : float, optional
+        The on-site energy disorder strength of the model.
     """
 
-    def __init__(self, vectors, u=2.0, eps=0.0, hop=1.0, mu=0.0, beta=5.0):
+    def __init__(self, vectors, u=2.0, eps=0.0, hop=1.0, mu=0.0, beta=5.0, disorder=0.):
         super().__init__(vectors)
         self.u = u
         self.hop = hop
         self.eps = eps
         self.mu = mu
         self.beta = beta
+        self.disorder = disorder
 
     @classmethod
     def half_filled(cls, num_sites, u=0.0, eps=0.0, hop=1.0, beta=1.0):
@@ -73,7 +76,11 @@ class HubbardModel(Lattice):
             The Hamiltonian matrix, where `N` is the number of lattice sites.
         """
         hop = -self.hop
-        onsite = self.eps - self.mu
+        if self.disorder:
+            w = self.disorder / 2
+            onsite = self.eps + np.random.uniform(-w, +w, size=self.num_sites)
+        else:
+            onsite = self.eps - self.mu
 
         dmap = self.data.map()
         data = np.zeros(dmap.size, dtype=np.float64)
@@ -82,7 +89,8 @@ class HubbardModel(Lattice):
         return csr_matrix((data, dmap.indices)).toarray()
 
 
-def hubbard_hypercube(shape, u=0.0, eps=0.0, hop=1.0, mu=0.0, beta=0.0, periodic=None):
+def hubbard_hypercube(shape, u=0.0, eps=0.0, hop=1.0, mu=0.0, beta=0.0, disorder=0.0,
+                      periodic=True):
     """Construct a `d`-dimensional Hubbard model.
 
     Parameters
@@ -103,7 +111,9 @@ def hubbard_hypercube(shape, u=0.0, eps=0.0, hop=1.0, mu=0.0, beta=0.0, periodic
         The chemical potential is subtracted from the on-site energy.
     beta : float, optional
         The inverse of the temperature `β=1/T`
-    periodic : sequence or integer or bool, optional
+    disorder : float, optional
+        The on-site energy disorder strength of the model.
+    periodic : sequence or integer or bool or None, optional
         Periodic boundary conditions. An integer or a sequence of integers is
         interpreted as the periodic axes to set, a boolean enables or disables
         all axes to be periodic.
@@ -119,7 +129,7 @@ def hubbard_hypercube(shape, u=0.0, eps=0.0, hop=1.0, mu=0.0, beta=0.0, periodic
             periodic = np.arange(dim)
         else:
             periodic = None
-    model = HubbardModel(np.eye(dim), u, eps, hop, mu, beta)
+    model = HubbardModel(np.eye(dim), u, eps, hop, mu, beta, disorder)
     model.add_atom()
     model.add_connections(1)
     model.build(shape, relative=True, periodic=periodic)
