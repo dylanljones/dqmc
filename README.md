@@ -1,19 +1,19 @@
 # DQMC
 
-![GitHub tag (latest by date)](https://img.shields.io/github/v/tag/dylanljones/dqmc)
-![GitHub license](https://img.shields.io/github/license/dylanljones/dqmc)
+![GitHub tag (latest by date)](https://img.shields.io/github/v/tag/dylanljones/dqmc?style=flat-square)
+![GitHub license](https://img.shields.io/github/license/dylanljones/dqmc?style=flat-square)
 
 |        |                                      |                                       |
 |:-------|:-------------------------------------|:--------------------------------------|
 | Master | [![Build][build-master]][build-link] | [![Tests][tests-master]][test-link]   |
 | Dev    | [![Build][build-dev]][build-link]    | [![Tests][tests-dev]][test-link]      |
 
-[build-master]: https://img.shields.io/github/workflow/status/dylanljones/dqmc/Build/master?label=build&logo=github&style=flat-square
-[build-dev]: https://img.shields.io/github/workflow/status/dylanljones/dqmc/Build/dev?label=build&logo=github&style=flat-square
+[build-master]: https://img.shields.io/github/workflow/status/dylanljones/dqmc/Build/master?label=build&logo=github&style=flat
+[build-dev]: https://img.shields.io/github/workflow/status/dylanljones/dqmc/Build/dev?label=build&logo=github&style=flat
 [build-link]: https://github.com/dylanljones/dqmc/actions/workflows/build.yml
 
-[tests-master]: https://img.shields.io/github/workflow/status/dylanljones/dqmc/Tests/master?label=tests&logo=github&style=flat-square
-[tests-dev]: https://img.shields.io/github/workflow/status/dylanljones/dqmc/Tests/dev?label=tests&logo=github&style=flat-square
+[tests-master]: https://img.shields.io/github/workflow/status/dylanljones/dqmc/Tests/master?label=tests&logo=github&style=flat
+[tests-dev]: https://img.shields.io/github/workflow/status/dylanljones/dqmc/Tests/dev?label=tests&logo=github&style=flat
 [test-link]: https://github.com/dylanljones/dqmc/actions/workflows/test.yml
 
 
@@ -38,15 +38,12 @@ order to obtain better results at low temperatures.
 
 ## Installation
 
-Install via `pip` from github:
+Install via `pip` from  [GitHub](https://github.com/dylanljones/dqmc):
 ```commandline
 pip install git+https://github.com/dylanljones/dqmc.git@VERSION
 ```
-or download/clone the package, navigate to the root directory and install via
-````commandline
-pip install -e <folder path>
-````
-or the `setup.py` script
+where `VERSION` is a release or tag (e.g. `0.1.2`). The project can also be
+cloned/forked and installed via the `setup.py` script
 ````commandline
 python setup.py install
 ````
