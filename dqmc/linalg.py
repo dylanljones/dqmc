@@ -200,7 +200,9 @@ def decompose_udt(a):
     """
     q, r, jpvt = decompose_qrp(a)
     # Extract diagonal entries of R
-    d = np.diag(np.abs(r))
+    diag = np.abs(r)
+    diag[diag == 0] = 1
+    d = np.diag(diag)
     # Scale columns of R by elements of 1/D and apply column pivoting
     t = (r.T / d).T[:, jpvt]
     return q, d, t
