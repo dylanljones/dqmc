@@ -16,6 +16,25 @@ from dataclasses import dataclass
 
 logger = logging.getLogger("dqmc")
 
+# maps label to attribute name and types
+ATTR_LABEL_MAP = {
+    "shape": [("shape", ), int, 5],
+    "u": [("u", ), float, 0.0],
+    "eps": [("eps", ), float, 0.0],
+    "t": [("t", "hop"), float, 1.0],
+    "mu": [("mu", ), float, 0.0],
+    "dt": [("dt", ), float, 0.1],
+    "beta": [("beta",), float],
+    "temp": [("temp",), float],
+    "num_times": [("l", "num_times"), int, 40],
+    "num_equil": [("nequil", "num_equil"), int, 512],
+    "num_sampl": [("nsampl", "num_sampl"), int, 512],
+    "num_wraps": [("nwraps", "num_wraps"), int, 0],
+    "prod_len": [("prodlen", "prod_len"), int, 0],
+    "sampl_recomp": [("recomp", "sampl_recomp"), int, 0],
+    "seed": [("seed", ), int, 0],
+}
+
 
 @dataclass
 class Parameters:
@@ -59,7 +78,80 @@ class Parameters:
         self.dt = 1 / (temp * self.num_times)
 
 
-def parse(file):  # noqa: C901
+def _build_attribute_map():
+    attr_map = dict()
+    for attr, info in ATTR_LABEL_MAP.items():
+        keys = info[0]
+        attr_type = info[1]
+        default = None if len(info) == 2 else info[2]
+        for key in keys:
+            if key in attr_map:
+                raise ValueError(f"Key {key} already registered in attribute map!")
+            attr_map[key] = [attr, attr_type, default]
+    return attr_map
+
+
+def _read_param_file(file):
+    # Initialize attribute map
+    attr_map = _build_attribute_map()
+    # Fill items with default values
+    items = dict()
+    for (attr, _, default) in attr_map.values():
+        if default is not None:
+            items[attr] = default
+    # Read file content
+    with open(file, "r") as fh:
+        text = fh.read()
+    # Parse lines of file
+    for line in text.splitlines(keepends=False):
+        # Extract label and value
+        if "#" in line:
+            text, comm = line.strip().split("#")
+            line = text.strip()
+        if not line:
+            continue
+        label, data = line.split(maxsplit=1)
+        label = label.lower()
+        data = data.replace(",", "").split(" ")
+        try:
+            # Parse value and cast to type
+            template = attr_map[label]
+            key = template[0]
+            datatype = template[1]
+            values = [(datatype(data[i])) for i in range(len(data))]
+            # Store values in dictionary
+            items[key] = values if len(values) > 1 else values[0]
+        except KeyError:
+            print("Parameter %s of file '%s' not recognized!" % (label, file))
+
+    return items
+
+
+def parse(file):
+    """Parses an input text file and extracts the DQMC parameters.
+
+    Parameters
+    ----------
+    file : str
+        The path of the input file.
+    Returns
+    -------
+    p : Parameters
+        The parsed parameters of the input file.
+    """
+    items = _read_param_file(file)
+    if "temp" in items:
+        items["beta"] = 1 / items["temp"]
+    if items.get("dt") == 0:
+        items["dt"] = items["beta"] / items["num_times"]
+    elif items["num_times"] == 0:
+        items["num_times"] = int(items["beta"] / items["dt"])
+    items.pop("beta")
+    items.pop("temp")
+    return Parameters(**items)
+
+
+def parse2(file):  # noqa: C901
     """Parses an input text file and extracts the DQMC parameters.
 
     Parameters
