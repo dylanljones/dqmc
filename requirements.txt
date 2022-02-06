@@ -8,3 +8,4 @@ lattpy>=0.6
 psutil>=5.0.0
 h5py>=3.0.0
 tqdm>=4.0.0
+gftool>= 0.9.0
