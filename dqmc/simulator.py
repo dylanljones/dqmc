@@ -56,7 +56,7 @@ class DQMC:
                                                                   seed)
 
         # Pre-compute time flow matrices
-        self.bmats_up, self.bmats_dn = compute_timestep_mats(
+        self.tsm_up, self.tsm_dn = compute_timestep_mats(
             self.expk, self.nu, self.config
         )
 
@@ -66,7 +66,7 @@ class DQMC:
         self.acceptance_probs = list()
 
         # Initialization
-        gf_up, gf_dn, sgndet, logdet = init_greens(self.bmats_up, self.bmats_dn,
+        gf_up, gf_dn, sgndet, logdet = init_greens(self.tsm_up, self.tsm_dn,
                                                    0, self.prod_len)
         self.gf_up = gf_up
         self.gf_dn = gf_dn
@@ -80,8 +80,8 @@ class DQMC:
     def compute_greens(self, t=0):   # noqa: F811
         if self.prod_len == 0:
             compute_greens(
-                self.bmats_up,
-                self.bmats_dn,
+                self.tsm_up,
+                self.tsm_dn,
                 self.gf_up,
                 self.gf_dn,
                 self.sgndet,
@@ -90,8 +90,8 @@ class DQMC:
             )
         else:
             compute_greens_qrd(
-                self.bmats_up,
-                self.bmats_dn,
+                self.tsm_up,
+                self.tsm_dn,
                 self.gf_up,
                 self.gf_dn,
                 self.sgndet,
@@ -108,8 +108,8 @@ class DQMC:
             self.expk,
             self.nu,
             self.config,
-            self.bmats_up,
-            self.bmats_dn,
+            self.tsm_up,
+            self.tsm_dn,
             self.gf_up,
             self.gf_dn,
             self.sgndet,
@@ -129,8 +129,8 @@ class DQMC:
             self.compute_greens()
         self.measurements.accumulate(self.gf_up, self.gf_dn, self.sgndet)
         if self.unequal_time_measurements:
-            self.measurements.accumulate_unequal_time(self.bmats_up,
-                                                      self.bmats_dn,
+            self.measurements.accumulate_unequal_time(self.tsm_up,
+                                                      self.tsm_dn,
                                                       self.gf_up,
                                                       self.gf_dn,
                                                       self.sgndet)

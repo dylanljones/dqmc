@@ -113,10 +113,10 @@ class MeasurementData:
         self._n_dbl += n_dbl * signfac
         self._mz2 += mz2 * signfac
 
-    def accumulate_unequal_time(self, bmats_up, bmats_dn, gf_up, gf_dn, sgns):
+    def accumulate_unequal_time(self, tsm_up, tsm_dn, gf_up, gf_dn, sgns):
         signfac = sgns[0] * sgns[1]
-        self._gftau0_up += signfac * compute_unequal_time_greens(bmats_up, gf_up)
-        self._gftau0_dn += signfac * compute_unequal_time_greens(bmats_dn, gf_dn)
+        self._gftau0_up += signfac * compute_unequal_time_greens(tsm_up, gf_up)
+        self._gftau0_dn += signfac * compute_unequal_time_greens(tsm_dn, gf_dn)
 
     def normalize(self):
         """Normalizes and returns all equal time measurements of observables."""

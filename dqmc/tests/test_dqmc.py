@@ -36,16 +36,16 @@ def _init(num_sites, num_timesteps, u, mu, beta, eps=0.0, periodic=True):
     assume(u * hop * (beta / num_timesteps)**2 < 0.1)
     model = hubbard_hypercube(num_sites, u, eps, hop, mu, beta, periodic=periodic)
     expk, _, nu, config = dqmc.init_qmc(model, num_timesteps, 0)
-    bmats_up, bmats_dn = dqmc.compute_timestep_mats(expk, nu, config)
-    return expk, nu, config, bmats_up, bmats_dn
+    tsm_up, tsm_dn = dqmc.compute_timestep_mats(expk, nu, config)
+    return expk, nu, config, tsm_up, tsm_dn
 
 
-def _greens(bmats_up, bmats_dn, t, prod_len=0):
+def _greens(tsm_up, tsm_dn, t, prod_len=0):
     try:
-        return dqmc.init_greens(bmats_up, bmats_dn, t, prod_len)
+        return dqmc.init_greens(tsm_up, tsm_dn, t, prod_len)
     except la.LinAlgError:
         assume(False)
-    gf = np.zeros(bmats_up.shape[0], dtype=np.float64)
+    gf = np.zeros(tsm_up.shape[0], dtype=np.float64)
     return gf, np.copy(gf), 0., 0.
 
 
@@ -121,7 +121,7 @@ def test_compute_timestep_mat(u, mu, beta, num_sites, num_times, t):
 
 @given(st_u, st_mu, st_beta, st_nsites, st_ntimes)
 def test_compute_timestep_mats(u, mu, beta, num_sites, num_times):
-    expk, nu, config, bmats_up, bmats_dn = _init(num_sites, num_times, u, mu, beta)
+    expk, nu, config, tsm_up, tsm_dn = _init(num_sites, num_times, u, mu, beta)
 
     # Check order of B-matrices
     t1 = num_times - 1
@@ -129,39 +129,39 @@ def test_compute_timestep_mats(u, mu, beta, num_sites, num_times):
     first_dn = dqmc.compute_timestep_mat(expk, nu, config, t=0, sigma=-1)
     last_up = dqmc.compute_timestep_mat(expk, nu, config, t=t1, sigma=+1)
     last_dn = dqmc.compute_timestep_mat(expk, nu, config, t=t1, sigma=-1)
-    assert_equal(last_up, bmats_up[-1])
-    assert_equal(last_dn, bmats_dn[-1])
-    assert_equal(first_up, bmats_up[0])
-    assert_equal(first_dn, bmats_dn[0])
+    assert_equal(last_up, tsm_up[-1])
+    assert_equal(last_dn, tsm_dn[-1])
+    assert_equal(first_up, tsm_up[0])
+    assert_equal(first_dn, tsm_dn[0])
 
 
 @given(st_u, st_mu, st_beta, st_nsites, st_ntimes, st_i, st_t)
 def test_update_timestep_mats(u, mu, beta, num_sites, num_times, i, t):
     assume((i < num_sites) and (t < num_times))
-    expk, nu, config, bmats_up, bmats_dn = _init(num_sites, num_times, u, mu, beta)
+    expk, nu, config, tsm_up, tsm_dn = _init(num_sites, num_times, u, mu, beta)
     config[i, t] = -config[i, t]
 
     bmat_up = dqmc.compute_timestep_mat(expk, nu, config, t, +1)
     bmat_dn = dqmc.compute_timestep_mat(expk, nu, config, t, -1)
-    dqmc.update_timestep_mats(expk, nu, config, bmats_up, bmats_dn, t)
+    dqmc.update_timestep_mats(expk, nu, config, tsm_up, tsm_dn, t)
 
-    assert_equal(bmat_up, bmats_up[t])
-    assert_equal(bmat_dn, bmats_dn[t])
+    assert_equal(bmat_up, tsm_up[t])
+    assert_equal(bmat_dn, tsm_dn[t])
 
 
 @given(st_u, st_mu, st_beta, st_nsites, st_ntimes, st_i, st_t)
 def test_update(u, mu, beta, num_sites, num_times, i, t):
     assume((i < num_sites) and (t < num_times))
-    expk, nu, config, bmats_up, bmats_dn = _init(num_sites, num_times, u, mu, beta)
+    expk, nu, config, tsm_up, tsm_dn = _init(num_sites, num_times, u, mu, beta)
 
     old_spin = config[i, t]
-    dqmc.update(expk, nu, config, bmats_up, bmats_dn, i, t)
+    dqmc.update(expk, nu, config, tsm_up, tsm_dn, i, t)
 
-    bmats_up_new, bmats_dn_new = dqmc.compute_timestep_mats(expk, nu, config)
+    tsm_up_new, tsm_dn_new = dqmc.compute_timestep_mats(expk, nu, config)
 
     assert config[i, t] == -old_spin
-    assert_equal(bmats_up_new, bmats_up)
-    assert_equal(bmats_dn_new, bmats_dn)
+    assert_equal(tsm_up_new, tsm_up)
+    assert_equal(tsm_dn_new, tsm_dn)
 
 
 @given(st.floats(0.1, 6), st_mu, st_beta, st_nsites, st_ntimes, st_i, st_t)
@@ -174,13 +174,13 @@ def test_compute_acceptance_fast(u, mu, beta, num_sites, num_times, i, t):
     prod_len = 0
     assume((i < num_sites) and (t < num_times))
     assume(prod_len == 0 or num_times % prod_len == 0)
-    expk, nu, config, bmats_up, bmats_dn = _init(num_sites, num_times, u, mu, beta)
-    gf_up, gf_dn, sgns, logdet = _greens(bmats_up, bmats_dn, t, prod_len)
+    expk, nu, config, tsm_up, tsm_dn = _init(num_sites, num_times, u, mu, beta)
+    gf_up, gf_dn, sgns, logdet = _greens(tsm_up, tsm_dn, t, prod_len)
 
     # Compute fast acceptance *before* spin flip
     d = dqmc.compute_acceptance_fast(nu, config, gf_up, gf_dn, i, t)
     # Compute old determinants before flip
-    m_up, m_dn = dqmc.compute_m_matrices(bmats_up, bmats_dn, t)
+    m_up, m_dn = dqmc.compute_m_matrices(tsm_up, tsm_dn, t)
     det_up, det_dn = 1., 1.
     try:
         det_up, det_dn = la.det(m_up), la.det(m_dn)
@@ -190,9 +190,9 @@ def test_compute_acceptance_fast(u, mu, beta, num_sites, num_times, i, t):
     assume(old_det != 0)
 
     # Flip spin
-    dqmc.update(expk, nu, config, bmats_up, bmats_dn, i, t)
+    dqmc.update(expk, nu, config, tsm_up, tsm_dn, i, t)
     # Compute acceptance ratio
-    m_up, m_dn = dqmc.compute_m_matrices(bmats_up, bmats_dn, t)
+    m_up, m_dn = dqmc.compute_m_matrices(tsm_up, tsm_dn, t)
     try:
         det_up, det_dn = la.det(m_up), la.det(m_dn)
     except la.LinAlgError:
@@ -211,12 +211,12 @@ def test_compute_greens_stable(u, mu, beta, num_sites, num_times, t, prod_len):
     """
     assume(num_times % prod_len == 0)
     assume(t < num_times)
-    expk, nu, config, bmats_up, bmats_dn = _init(num_sites, num_times, u, mu, beta)
+    expk, nu, config, tsm_up, tsm_dn = _init(num_sites, num_times, u, mu, beta)
 
     # Compute Green's function of time slice `t`
-    gf_up_ref, gf_dn_ref, sgn_ref, det_ref = _greens(bmats_up, bmats_dn, t)
+    gf_up_ref, gf_dn_ref, sgn_ref, det_ref = _greens(tsm_up, tsm_dn, t)
     # Compute stable Green's function of time slice `t`
-    gf_up, gf_dn, sgn, det = _greens(bmats_up, bmats_dn, t, prod_len)
+    gf_up, gf_dn, sgn, det = _greens(tsm_up, tsm_dn, t, prod_len)
     rtol = 0.5
 
     assert_gf_equal(gf_up, gf_up_ref, atol=0.05, rtol=rtol)
@@ -230,14 +230,14 @@ def test_update_greens(u, mu, beta, num_sites, num_times, i, t):
     prod_len = 2
     assume((i < num_sites) and (t < num_times))
     assume(num_times % prod_len == 0)
-    expk, nu, config, bmats_up, bmats_dn = _init(num_sites, num_times, u, mu, beta)
-    gf_up, gf_dn, _, _ = _greens(bmats_up, bmats_dn, t, prod_len)
+    expk, nu, config, tsm_up, tsm_dn = _init(num_sites, num_times, u, mu, beta)
+    gf_up, gf_dn, _, _ = _greens(tsm_up, tsm_dn, t, prod_len)
 
     # Update Green's function
     dqmc.update_greens(nu, config, gf_up, gf_dn, i, t)
     # Update configuration and B-matrices and compute Greens function
-    dqmc.update(expk, nu, config, bmats_up, bmats_dn, i, t)
-    gf_up_ref, gf_dn_ref, _, _ = _greens(bmats_up, bmats_dn, t, prod_len)
+    dqmc.update(expk, nu, config, tsm_up, tsm_dn, i, t)
+    gf_up_ref, gf_dn_ref, _, _ = _greens(tsm_up, tsm_dn, t, prod_len)
 
     assert_gf_equal(gf_up, gf_up_ref)
     assert_gf_equal(gf_dn, gf_dn_ref)
@@ -248,14 +248,14 @@ def test_update_greens_blas(u, mu, beta, num_sites, num_times, i, t):
     prod_len = 2
     assume((i < num_sites) and (t < num_times))
     assume(num_times % prod_len == 0)
-    expk, nu, config, bmats_up, bmats_dn = _init(num_sites, num_times, u, mu, beta)
-    gf_up, gf_dn, _, _ = _greens(bmats_up, bmats_dn, t, prod_len)
+    expk, nu, config, tsm_up, tsm_dn = _init(num_sites, num_times, u, mu, beta)
+    gf_up, gf_dn, _, _ = _greens(tsm_up, tsm_dn, t, prod_len)
 
     # Update Green's function
     dqmc.update_greens_blas(nu, config, gf_up, gf_dn, i, t)
     # Update configuration and B-matrices and compute Greens function
-    dqmc.update(expk, nu, config, bmats_up, bmats_dn, i, t)
-    gf_up_ref, gf_dn_ref, _, _ = _greens(bmats_up, bmats_dn, t, prod_len)
+    dqmc.update(expk, nu, config, tsm_up, tsm_dn, i, t)
+    gf_up_ref, gf_dn_ref, _, _ = _greens(tsm_up, tsm_dn, t, prod_len)
 
     assert_gf_equal(gf_up, gf_up_ref)
     assert_gf_equal(gf_dn, gf_dn_ref)
@@ -266,15 +266,15 @@ def test_wrap_up_greens(u, mu, beta, num_sites, num_times, t):
     prod_len = 2
     assume(t < num_times)
     assume(num_times % prod_len == 0)
-    expk, nu, config, bmats_up, bmats_dn = _init(num_sites, num_times, u, mu, beta)
+    expk, nu, config, tsm_up, tsm_dn = _init(num_sites, num_times, u, mu, beta)
 
     # Compute Green's function of time slice `t`
-    gf_up, gf_dn, _, _ = _greens(bmats_up, bmats_dn, t, prod_len)
+    gf_up, gf_dn, _, _ = _greens(tsm_up, tsm_dn, t, prod_len)
     # Wrap Greens function to next time slice `t+1`
-    dqmc.wrap_up_greens(bmats_up, bmats_dn, gf_up, gf_dn, t)
+    dqmc.wrap_up_greens(tsm_up, tsm_dn, gf_up, gf_dn, t)
     # Re-compute Green's function for next time slice `t+1`
     tp1 = (t + 1) % num_times
-    gf_up_ref, gf_dn_ref, _, _ = _greens(bmats_up, bmats_dn, tp1, prod_len)
+    gf_up_ref, gf_dn_ref, _, _ = _greens(tsm_up, tsm_dn, tp1, prod_len)
 
     assert_gf_equal(gf_up, gf_up_ref)
     assert_gf_equal(gf_dn, gf_dn_ref)
@@ -285,15 +285,15 @@ def test_wrap_down_greens(u, mu, beta, num_sites, num_times, t):
     prod_len = 2
     assume(t < num_times)
     assume(num_times % prod_len == 0)
-    expk, nu, config, bmats_up, bmats_dn = _init(num_sites, num_times, u, mu, beta)
+    expk, nu, config, tsm_up, tsm_dn = _init(num_sites, num_times, u, mu, beta)
 
     # Compute Green's function of time slice `t`
-    gf_up, gf_dn, _, _ = _greens(bmats_up, bmats_dn, t, prod_len)
+    gf_up, gf_dn, _, _ = _greens(tsm_up, tsm_dn, t, prod_len)
     # Wrap Greens function to next time slice `t+1`
-    dqmc.wrap_down_greens(bmats_up, bmats_dn, gf_up, gf_dn, t)
+    dqmc.wrap_down_greens(tsm_up, tsm_dn, gf_up, gf_dn, t)
     # Re-compute Green's function for next time slice `t+1`
     tm1 = t - 1 if t > 0 else num_times - 1
-    gf_up_ref, gf_dn_ref, _, _ = _greens(bmats_up, bmats_dn, tm1, prod_len)
+    gf_up_ref, gf_dn_ref, _, _ = _greens(tsm_up, tsm_dn, tm1, prod_len)
 
     assert_gf_equal(gf_up, gf_up_ref)
     assert_gf_equal(gf_dn, gf_dn_ref)

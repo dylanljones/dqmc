@@ -48,16 +48,16 @@ def _init(num_sites, num_timesteps, u, mu, beta, eps=0.0, periodic=True):
     assume(u * hop * (beta / num_timesteps)**2 < 0.1)
     model = hubbard_hypercube(num_sites, u, eps, hop, mu, beta, periodic=periodic)
     expk, expk_inv, nu, config = dqmc.init_qmc(model, num_timesteps, 0)
-    bmats_up, bmats_dn = dqmc.compute_timestep_mats(expk, nu, config)
-    return expk, expk_inv, nu, config, bmats_up, bmats_dn
+    tsm_up, tsm_dn = dqmc.compute_timestep_mats(expk, nu, config)
+    return expk, expk_inv, nu, config, tsm_up, tsm_dn
 
 
-def _greens(bmats_up, bmats_dn, t, prod_len=0):
+def _greens(tsm_up, tsm_dn, t, prod_len=0):
     try:
-        return dqmc.init_greens(bmats_up, bmats_dn, t, prod_len)
+        return dqmc.init_greens(tsm_up, tsm_dn, t, prod_len)
     except la.LinAlgError:
         assume(False)
-    gf = np.zeros(bmats_up.shape[0], dtype=np.float64)
+    gf = np.zeros(tsm_up.shape[0], dtype=np.float64)
     return gf, np.copy(gf), 0., 0.
 
 
@@ -116,11 +116,11 @@ def test_compute_timestep_mats(u, mu, beta, nsites, ntimes):
     model = hubbard_hypercube(nsites, u, eps, hop, mu, beta, periodic=True)
     expk, _, nu, config = dqmc.init_qmc(model, ntimes, 0)
 
-    bmats_up_ref, bmats_dn_ref = dqmc.compute_timestep_mats(expk, nu, config)
-    bmats_up, bmats_dn = src.compute_timestep_mats(expk, nu, config)
+    tsm_up_ref, tsm_dn_ref = dqmc.compute_timestep_mats(expk, nu, config)
+    tsm_up, tsm_dn = src.compute_timestep_mats(expk, nu, config)
 
-    assert_allclose(bmats_up, bmats_up_ref, rtol=1e-8)
-    assert_allclose(bmats_dn, bmats_dn_ref, rtol=1e-8)
+    assert_allclose(tsm_up, tsm_up_ref, rtol=1e-8)
+    assert_allclose(tsm_dn, tsm_dn_ref, rtol=1e-8)
 
 
 @given(st_u, st_mu, st_beta, st_nsites, st_ntimes)
@@ -131,49 +131,49 @@ def test_compute_timestep_mats_inv(u, mu, beta, nsites, ntimes):
     model = hubbard_hypercube(nsites, u, eps, hop, mu, beta, periodic=True)
     _, expk_inv, nu, config = dqmc.init_qmc(model, ntimes, 0)
 
-    bmats_up_ref, bmats_dn_ref = dqmc.compute_timestep_mats_inv(expk_inv, nu, config)
-    bmats_up, bmats_dn = src.compute_timestep_mats_inv(expk_inv, nu, config)
+    tsm_up_ref, tsm_dn_ref = dqmc.compute_timestep_mats_inv(expk_inv, nu, config)
+    tsm_up, tsm_dn = src.compute_timestep_mats_inv(expk_inv, nu, config)
 
-    assert_allclose(bmats_up, bmats_up_ref, rtol=1e-8)
-    assert_allclose(bmats_dn, bmats_dn_ref, rtol=1e-8)
+    assert_allclose(tsm_up, tsm_up_ref, rtol=1e-8)
+    assert_allclose(tsm_dn, tsm_dn_ref, rtol=1e-8)
 
 
 @given(st_u, st_mu, st_beta, st_nsites, st_ntimes, st_i, st_t)
 def test_update_timestep_mats(u, mu, beta, nsites, ntimes, i, t):
     assume_fortran()
     assume((i < nsites) and (t < ntimes))
-    expk, _, nu, config, bmats_up, bmats_dn = _init(nsites, ntimes, u, mu, beta)
-    bmats_up, bmats_dn = np.asfortranarray(bmats_up), np.asfortranarray(bmats_dn)
-    bmats_up_ref = np.ascontiguousarray(bmats_up)
-    bmats_dn_ref = np.ascontiguousarray(bmats_dn)
+    expk, _, nu, config, tsm_up, tsm_dn = _init(nsites, ntimes, u, mu, beta)
+    tsm_up, tsm_dn = np.asfortranarray(tsm_up), np.asfortranarray(tsm_dn)
+    tsm_up_ref = np.ascontiguousarray(tsm_up)
+    tsm_dn_ref = np.ascontiguousarray(tsm_dn)
 
     # Update config
     config[i, t] = -config[i, t]
     # Update time step mats
-    dqmc.update_timestep_mats(expk, nu, config, bmats_up_ref, bmats_dn_ref, t)
-    src.update_timestep_mats(expk, nu, config, bmats_up, bmats_dn, t)
+    dqmc.update_timestep_mats(expk, nu, config, tsm_up_ref, tsm_dn_ref, t)
+    src.update_timestep_mats(expk, nu, config, tsm_up, tsm_dn, t)
 
-    assert_allclose(bmats_up, bmats_up_ref, rtol=1e-8)
-    assert_allclose(bmats_dn, bmats_dn_ref, rtol=1e-8)
+    assert_allclose(tsm_up, tsm_up_ref, rtol=1e-8)
+    assert_allclose(tsm_dn, tsm_dn_ref, rtol=1e-8)
 
 
 @given(st_u, st_mu, st_beta, st_nsites, st_ntimes, st_i, st_t)
 def test_update_timestep_mats_inv(u, mu, beta, nsites, ntimes, i, t):
     assume_fortran()
     assume((i < nsites) and (t < ntimes))
-    _, expk_inv, nu, config, bmats_up, bmats_dn = _init(nsites, ntimes, u, mu, beta)
-    bmats_up, bmats_dn = np.asfortranarray(bmats_up), np.asfortranarray(bmats_dn)
-    bmats_up_ref = np.ascontiguousarray(bmats_up)
-    bmats_dn_ref = np.ascontiguousarray(bmats_dn)
+    _, expk_inv, nu, config, tsm_up, tsm_dn = _init(nsites, ntimes, u, mu, beta)
+    tsm_up, tsm_dn = np.asfortranarray(tsm_up), np.asfortranarray(tsm_dn)
+    tsm_up_ref = np.ascontiguousarray(tsm_up)
+    tsm_dn_ref = np.ascontiguousarray(tsm_dn)
 
     # Update config
     config[i, t] = -config[i, t]
     # Update time step mats
-    dqmc.update_timestep_mats_inv(expk_inv, nu, config, bmats_up_ref, bmats_dn_ref, t)
-    src.update_timestep_mats_inv(expk_inv, nu, config, bmats_up, bmats_dn, t)
+    dqmc.update_timestep_mats_inv(expk_inv, nu, config, tsm_up_ref, tsm_dn_ref, t)
+    src.update_timestep_mats_inv(expk_inv, nu, config, tsm_up, tsm_dn, t)
 
-    assert_allclose(bmats_up, bmats_up_ref, rtol=1e-8)
-    assert_allclose(bmats_dn, bmats_dn_ref, rtol=1e-8)
+    assert_allclose(tsm_up, tsm_up_ref, rtol=1e-8)
+    assert_allclose(tsm_dn, tsm_dn_ref, rtol=1e-8)
 
 
 @given(st_tsm, st.integers(1, 16), st.integers(0, 10))
@@ -209,17 +209,17 @@ def test_compute_greens(u, mu, beta, num_sites, num_times, t, prod_len):
     assume_fortran()
     assume(num_times % prod_len == 0)
     assume(t < num_times)
-    expk, _, nu, config, bmats_up, bmats_dn = _init(num_sites, num_times, u, mu, beta)
+    expk, _, nu, config, tsm_up, tsm_dn = _init(num_sites, num_times, u, mu, beta)
 
     # Compute Green's function of time slice `t`
-    gf_up_ref, gf_dn_ref, sgn_ref, det_ref = _greens(bmats_up, bmats_dn, t)
+    gf_up_ref, gf_dn_ref, sgn_ref, det_ref = _greens(tsm_up, tsm_dn, t)
 
     shape = (num_sites, num_sites)
     gf_up = np.asfortranarray(np.zeros(shape, dtype=np.float64))
     gf_dn = np.asfortranarray(np.zeros(shape, dtype=np.float64))
 
-    tsm_up = dqmc.matrix_product_sequence_0beta(bmats_up, prod_len, t)
-    tsm_dn = dqmc.matrix_product_sequence_0beta(bmats_dn, prod_len, t)
+    tsm_up = dqmc.matrix_product_sequence_0beta(tsm_up, prod_len, t)
+    tsm_dn = dqmc.matrix_product_sequence_0beta(tsm_dn, prod_len, t)
 
     sgn, det = np.zeros(2), np.zeros(2)
     sgn[0], det[0] = src.construct_greens(tsm_up, gf_up)
@@ -240,8 +240,8 @@ def test_update_greens(u, mu, beta, num_sites, num_times, i, t):
     assume((i < num_sites) and (t < num_times))
     assume(num_times % prod_len == 0)
 
-    expk, _, nu, config, bmats_up, bmats_dn = _init(num_sites, num_times, u, mu, beta)
-    gf_up_ref, gf_dn_ref, _, _ = _greens(bmats_up, bmats_dn, t, prod_len)
+    expk, _, nu, config, tsm_up, tsm_dn = _init(num_sites, num_times, u, mu, beta)
+    gf_up_ref, gf_dn_ref, _, _ = _greens(tsm_up, tsm_dn, t, prod_len)
     gf_up = np.asfortranarray(gf_up_ref)
     gf_dn = np.asfortranarray(gf_dn_ref)
 
@@ -257,15 +257,15 @@ def test_wrap_up_greens(u, mu, beta, nsites, ntimes, t):
     assume_fortran()
     prod_len = 2
     assume((t < ntimes) and (ntimes % prod_len == 0))
-    expk, expk_inv, nu, config, bmats_up, bmats_dn = _init(nsites, ntimes, u, mu, beta)
-    bmats_up_inv, bmats_dn_inv = dqmc.compute_timestep_mats_inv(expk_inv, nu, config)
-    gf_up_ref, gf_dn_ref, _, _ = _greens(bmats_up, bmats_dn, t, prod_len)
+    expk, expk_inv, nu, config, tsm_up, tsm_dn = _init(nsites, ntimes, u, mu, beta)
+    tsm_up_inv, tsm_dn_inv = dqmc.compute_timestep_mats_inv(expk_inv, nu, config)
+    gf_up_ref, gf_dn_ref, _, _ = _greens(tsm_up, tsm_dn, t, prod_len)
     gf_up = np.asfortranarray(gf_up_ref)
     gf_dn = np.asfortranarray(gf_dn_ref)
 
-    dqmc.wrap_up_greens(bmats_up, bmats_dn, gf_up_ref, gf_dn_ref, t)
-    src.wrap_up_greens(bmats_up, bmats_up_inv, gf_up, t)
-    src.wrap_up_greens(bmats_dn, bmats_dn_inv, gf_dn, t)
+    dqmc.wrap_up_greens(tsm_up, tsm_dn, gf_up_ref, gf_dn_ref, t)
+    src.wrap_up_greens(tsm_up, tsm_up_inv, gf_up, t)
+    src.wrap_up_greens(tsm_dn, tsm_dn_inv, gf_dn, t)
 
     assert_gf_equal(gf_up, gf_up_ref)
     assert_gf_equal(gf_dn, gf_dn_ref)
@@ -276,15 +276,15 @@ def test_wrap_down_greens(u, mu, beta, nsites, ntimes, t):
     assume_fortran()
     prod_len = 2
     assume((0 < t < ntimes) and (ntimes % prod_len == 0))
-    expk, expk_inv, nu, config, bmats_up, bmats_dn = _init(nsites, ntimes, u, mu, beta)
-    bmats_up_inv, bmats_dn_inv = dqmc.compute_timestep_mats_inv(expk_inv, nu, config)
-    gf_up_ref, gf_dn_ref, _, _ = _greens(bmats_up, bmats_dn, t, prod_len)
+    expk, expk_inv, nu, config, tsm_up, tsm_dn = _init(nsites, ntimes, u, mu, beta)
+    tsm_up_inv, tsm_dn_inv = dqmc.compute_timestep_mats_inv(expk_inv, nu, config)
+    gf_up_ref, gf_dn_ref, _, _ = _greens(tsm_up, tsm_dn, t, prod_len)
     gf_up = np.asfortranarray(gf_up_ref)
     gf_dn = np.asfortranarray(gf_dn_ref)
 
-    dqmc.wrap_down_greens(bmats_up, bmats_dn, gf_up_ref, gf_dn_ref, t)
-    src.wrap_down_greens(bmats_up, bmats_up_inv, gf_up, t)
-    src.wrap_down_greens(bmats_dn, bmats_dn_inv, gf_dn, t)
+    dqmc.wrap_down_greens(tsm_up, tsm_dn, gf_up_ref, gf_dn_ref, t)
+    src.wrap_down_greens(tsm_up, tsm_up_inv, gf_up, t)
+    src.wrap_down_greens(tsm_dn, tsm_dn_inv, gf_dn, t)
 
     assert_gf_equal(gf_up, gf_up_ref)
     assert_gf_equal(gf_dn, gf_dn_ref)

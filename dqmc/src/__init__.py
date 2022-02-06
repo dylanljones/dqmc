@@ -38,29 +38,29 @@ def compute_timestep_mat_inv(expk_inv, nu, config, t, sigma):
 
 def compute_timestep_mats(expk, nu, config):
     n, ntimes = config.shape
-    bmats_up = np.asfortranarray(np.zeros((ntimes, n, n), dtype=np.float64))
-    bmats_dn = np.asfortranarray(np.zeros((ntimes, n, n), dtype=np.float64))
-    _tf.compute_timestep_mats(n, ntimes, expk, nu, config, bmats_up, bmats_dn)
-    return bmats_up, bmats_dn
+    tsm_up = np.asfortranarray(np.zeros((ntimes, n, n), dtype=np.float64))
+    tsm_dn = np.asfortranarray(np.zeros((ntimes, n, n), dtype=np.float64))
+    _tf.compute_timestep_mats(n, ntimes, expk, nu, config, tsm_up, tsm_dn)
+    return tsm_up, tsm_dn
 
 
 def compute_timestep_mats_inv(expk_inv, nu, config):
     n, ntimes = config.shape
-    bmats_up = np.asfortranarray(np.zeros((ntimes, n, n), dtype=np.float64))
-    bmats_dn = np.asfortranarray(np.zeros((ntimes, n, n), dtype=np.float64))
-    _tf.compute_timestep_mats_inv(n, ntimes, expk_inv, nu, config, bmats_up, bmats_dn)
-    return bmats_up, bmats_dn
+    tsm_up = np.asfortranarray(np.zeros((ntimes, n, n), dtype=np.float64))
+    tsm_dn = np.asfortranarray(np.zeros((ntimes, n, n), dtype=np.float64))
+    _tf.compute_timestep_mats_inv(n, ntimes, expk_inv, nu, config, tsm_up, tsm_dn)
+    return tsm_up, tsm_dn
 
 
-def update_timestep_mats(expk, nu, config, bmats_up, bmats_dn, t):
+def update_timestep_mats(expk, nu, config, tsm_up, tsm_dn, t):
     n, ntimes = config.shape
-    _tf.update_timestep_mats(n, ntimes, expk, nu, config, bmats_up, bmats_dn, t + 1)
+    _tf.update_timestep_mats(n, ntimes, expk, nu, config, tsm_up, tsm_dn, t + 1)
 
 
-def update_timestep_mats_inv(expk_inv, nu, config, bmats_up, bmats_dn, t):
+def update_timestep_mats_inv(expk_inv, nu, config, tsm_up, tsm_dn, t):
     n, ntimes = config.shape
     _tf.update_timestep_mats_inv(n, ntimes, expk_inv, nu, config,
-                                 bmats_up, bmats_dn, t + 1)
+                                 tsm_up, tsm_dn, t + 1)
 
 
 def matrix_product_sequence_0beta(mats, prod_len, shift):
@@ -181,11 +181,11 @@ def update_greens(nu, config, gf_up, gf_dn, i, t):
     return gf_up, gf_dn
 
 
-def wrap_up_greens(bmats, bmats_inv, gf, t):
-    ntimes, n, _ = bmats.shape
-    _gf.wrap_up_greens(ntimes, n, bmats, bmats_inv, gf, t + 1)
+def wrap_up_greens(tsm, tsm_inv, gf, t):
+    ntimes, n, _ = tsm.shape
+    _gf.wrap_up_greens(ntimes, n, tsm, tsm_inv, gf, t + 1)
 
 
-def wrap_down_greens(bmats, bmats_inv, gf, t):
-    ntimes, n, _ = bmats.shape
-    _gf.wrap_down_greens(ntimes, n, bmats, bmats_inv, gf, t + 1)
+def wrap_down_greens(tsm, tsm_inv, gf, t):
+    ntimes, n, _ = tsm.shape
+    _gf.wrap_down_greens(ntimes, n, tsm, tsm_inv, gf, t + 1)
