@@ -225,7 +225,7 @@ def test_compute_greens(u, mu, beta, num_sites, num_times, t, prod_len):
     sgn[0], det[0] = src.construct_greens(tsm_up, gf_up)
     sgn[1], det[1] = src.construct_greens(tsm_dn, gf_dn)
 
-    rtol = 0.5
+    rtol = 0.1 if u < 4 else 1.0
 
     assert_gf_equal(gf_up, gf_up_ref, atol=0.05, rtol=rtol)
     assert_gf_equal(gf_dn, gf_dn_ref, atol=0.05, rtol=rtol)
