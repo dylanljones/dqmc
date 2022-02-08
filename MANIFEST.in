@@ -1,5 +1,5 @@
 # Include Fortran
-recursive-include mypkg *.f90
+recursive-include dqmc *.f90
 
 # Include the requirements file
 include *.txt
