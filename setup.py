@@ -24,10 +24,10 @@ def long_description():
 
 
 ext_modules = [
-    Extension(name="src.timeflow", sources=["dqmc/src/timeflow.f"],
-              libraries=["lapack", "blas"]),
-    Extension(name="src.greens", sources=["dqmc/src/greens.f"],
-              libraries=["lapack", "blas"])
+    Extension(name="src.timeflow", sources=["dqmc/src/timeflow.f90"],
+              libraries=["lapack", "blas"], extra_f90_compile_args=["-ffixed-form"]),
+    Extension(name="src.greens", sources=["dqmc/src/greens.f90"],
+              libraries=["lapack", "blas"], extra_f90_compile_args=["-ffixed-form"])
 ]
 
 
@@ -54,5 +54,5 @@ setup(
         'Programming Language :: Python :: 3.9',
         'Topic :: Scientific/Engineering :: Physics',
     ],
-    keywords=["quantum monte carlo", "physics", "dqmc", ""],
+    keywords=["quantum monte carlo", "physics", "dqmc"],
 )
