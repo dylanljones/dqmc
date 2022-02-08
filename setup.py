@@ -25,9 +25,9 @@ def long_description():
 
 ext_modules = [
     Extension(name="dqmc.src.timeflow", sources=["dqmc/src/timeflow.f90"],
-              libraries=["lapack", "blas"], extra_f90_compile_args=["-ffixed-form"]),
+              libraries=["lapack", "blas"]),
     Extension(name="dqmc.src.greens", sources=["dqmc/src/greens.f90"],
-              libraries=["lapack", "blas"], extra_f90_compile_args=["-ffixed-form"])
+              libraries=["lapack", "blas"])
 ]
 
 
