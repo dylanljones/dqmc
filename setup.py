@@ -24,9 +24,9 @@ def long_description():
 
 
 ext_modules = [
-    Extension(name="src.timeflow", sources=["dqmc/src/timeflow.f90"],
+    Extension(name="src.timeflow", sources=["dqmc/src/timeflow.f"],
               libraries=["lapack", "blas"]),
-    Extension(name="src.greens", sources=["dqmc/src/greens.f90"],
+    Extension(name="src.greens", sources=["dqmc/src/greens.f"],
               libraries=["lapack", "blas"])
 ]
 
